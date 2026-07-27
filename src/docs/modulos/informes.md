@@ -52,7 +52,9 @@ Es el módulo más simple del aplicativo — no consume framework LAN ni tiene l
 
 ## 4 · Componentes React
 
-Fuente: `frontend/src/components/Informes/`.
+Fuente: `frontend/src/components/Informes/` y `frontend/src/components/AdminPanel/Informes/`.
+
+**Vista de usuario** (galería en `/informes`):
 
 ```
 Informes/
@@ -67,11 +69,35 @@ Informes/
     └── (helpers menores)
 ```
 
+**Vista administrativa** (modal de creación/edición en `/configuracion/informes`) — **refactorizada en v1.x (2026-07-17)**:
+
+```
+AdminPanel/Informes/
+├── InformeFormTab.jsx                 ← form del modal (crear/editar)
+├── hooks/
+│   └── useInformeForm.js              ← estado + validación + handleChange numérico para 'orden'
+└── ...
+```
+
 ⚠ Componentes exactos inferidos por convención — verificar en el filesystem.
 
 ### 4.1 Sobre el iframe
 
 El iframe carga la URL configurada. **El aplicativo no controla la autenticación del sitio externo** — depende de cada proveedor (Power BI usa Azure AD que si coincide con el SSO del aplicativo puede aprovecharlo, Metabase requiere login separado, etc.).
+
+### 4.2 · Campo `orden` con auto-cálculo (añadido en v1.x, 2026-07-17)
+
+`InformeFormTab.jsx` incluye al final de la segunda columna un campo numérico "Orden de visualización" con un placeholder descriptivo:
+
+> "Dejar vacío para asignar automáticamente el siguiente consecutivo"
+
+**Comportamiento en `useInformeForm.js`:**
+
+- El `handleChange` procesa el campo como numérico: si el usuario escribe `5`, el hook guarda `5`.
+- Si el usuario **borra por completo** el contenido del campo, el hook guarda `null` (no `""` ni `0`).
+- Al enviar el form, el payload al backend contiene `orden: null` cuando el usuario dejó el campo vacío — señal para que `create_informe.php` calcule `MAX(orden) + 1`.
+
+Se **inicializa y propaga correctamente** en creación y edición — ver §5.1 y §5.2 para el comportamiento del backend.
 
 ---
 
@@ -82,11 +108,73 @@ Fuente: `backend/backend/api/informes/`. Patrón A.
 | Endpoint                | Auth                                                 | Propósito                                            |
 | ----------------------- | ---------------------------------------------------- | ---------------------------------------------------- |
 | `get_informes.php`      | Bearer                                               | Lista de informes visibles para el usuario en sesión |
-| `create_informe.php`    | Bearer + Permiso `/configuracion/informes` · `crear` | Alta con permisos por área/cargo                     |
-| `update_informe.php`    | Bearer + Permiso `editar`                            | Edición                                              |
+| `create_informe.php`    | Bearer + Permiso `/configuracion/informes` · `crear` | Alta con permisos por área/cargo. **Auto-orden desde v1.x.** |
+| `update_informe.php`    | Bearer + Permiso `editar`                            | Edición **defensiva** desde v1.x — respeta valores actuales para campos ausentes en el payload |
 | `update_bulk_order.php` | Bearer + Permiso `editar`                            | Reordenamiento en drag-and-drop                      |
 
 **Sin endpoint `delete`** — soft delete o eliminación de las filas de acceso.
+
+### 5.1 `create_informe.php` — auto-cálculo de `orden` (v1.x)
+
+Si el payload **no incluye** `orden` (o llega como `null`), el endpoint calcula dinámicamente el siguiente consecutivo **dentro de la misma transacción**:
+
+```php
+$db->beginTransaction();
+
+$orden = $input['orden'] ?? null;
+if ($orden === null) {
+    // Consulta dentro de la misma transacción para evitar race conditions
+    $stmt = $db->query("SELECT COALESCE(MAX(orden), 0) + 1 AS next_orden FROM informes");
+    $orden = $stmt->fetchColumn();
+}
+
+$stmt = $db->prepare("INSERT INTO informes (titulo, descripcion, id_area, url, color, orden, activo) VALUES (:titulo, :descripcion, :id_area, :url, :color, :orden, 1)");
+$stmt->execute([...]);
+
+// resto de la inserción (informe_area, informe_cargo)
+$db->commit();
+```
+
+**Puntos técnicos:**
+
+- El `COALESCE(MAX(orden), 0) + 1` **funciona incluso cuando la tabla está vacía** — devuelve `1`.
+- La consulta y el INSERT ocurren **dentro de la misma transacción**, así que dos creaciones concurrentes no producen orden duplicado (el `SELECT ... FOR UPDATE` explícito sería aún más estricto, pero con el nivel de aislamiento por defecto de InnoDB — REPEATABLE READ — el escenario ya está protegido en la práctica).
+- Si el frontend **sí envía** `orden` explícito (usuario lo especificó), se respeta ese valor sin recalcular.
+
+### 5.2 `update_informe.php` — patch semantics defensivas (v1.x)
+
+Antes de v1.x, el endpoint sobrescribía todos los campos con lo que llegara en el payload — un campo ausente se convertía en `NULL` o valor por defecto. Esto obligaba al frontend a enviar el objeto completo aunque solo cambiara un valor.
+
+Desde v1.x, el endpoint **lee los valores actuales del registro dentro de la transacción**, y para cada propiedad opcional (`orden`, `color`, `descripcion`, `url_icono` cuando aplique) usa lo del payload solo si viene definido:
+
+```php
+$db->beginTransaction();
+
+// 1. Leer valores actuales
+$stmt = $db->prepare("SELECT * FROM informes WHERE id = :id FOR UPDATE");
+$stmt->execute(['id' => $id]);
+$actual = $stmt->fetch(PDO::FETCH_ASSOC);
+if (!$actual) { /* 404 */ }
+
+// 2. Merge — payload gana solo cuando trae la propiedad
+$orden = array_key_exists('orden', $input) ? $input['orden'] : $actual['orden'];
+$color = array_key_exists('color', $input) ? $input['color'] : $actual['color'];
+$titulo = $input['titulo'] ?? $actual['titulo'];       // titulo sí es obligatorio, pero se mantiene si viene igual
+// ...
+
+// 3. UPDATE con los valores mezclados
+$stmt = $db->prepare("UPDATE informes SET titulo=:titulo, orden=:orden, color=:color, ... WHERE id=:id");
+$stmt->execute([...]);
+$db->commit();
+```
+
+**Comportamiento resultante:**
+
+- Enviar `{ id: 5, titulo: "Nuevo título" }` → cambia solo el título. Los demás campos permanecen intactos.
+- Enviar `{ id: 5, orden: null }` → **explícitamente** setea `orden` a null (distinto de omitir el campo).
+- Enviar `{ id: 5, color: "#00ff00" }` → cambia solo el color.
+
+Distinción crítica entre **omisión** (`array_key_exists` es false) y **valor null explícito** (`array_key_exists` es true, valor es null). El endpoint respeta esa semántica.
 
 ---
 
@@ -165,6 +253,14 @@ Cada informe tiene `color` en formato `#hex` — se usa en el fondo o borde de l
 ### 8.5 Sin borrado hard
 
 El endpoint `delete` no existe. Ocultar un informe requiere `activo = 0` desde AdminPanel.
+
+### 8.6 Auto-cálculo de `orden` en creación (v1.x)
+
+Ver §5.1. Si el usuario deja el campo vacío al crear, el sistema asigna `MAX(orden) + 1`. Consecuencia práctica: crear un informe sin pensar en el orden lo pone **al final** de la galería — comportamiento intuitivo.
+
+### 8.7 Actualización defensiva con patch semantics (v1.x)
+
+Ver §5.2. `update_informe.php` respeta los valores actuales para propiedades opcionales ausentes en el payload. Consecuencia: el frontend puede enviar payloads parciales y no perder información — más seguro y menos verboso.
 
 ---
 

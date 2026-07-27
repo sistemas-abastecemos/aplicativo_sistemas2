@@ -1084,6 +1084,11 @@
   transition: color 0.2s ease;
 }
 
+.labelSubtext {
+  font-weight: 500;
+  opacity: 0.85;
+}
+
 .formInputApple {
   width: 100%;
   padding: 11px 14px;
@@ -1348,5 +1353,117 @@
 
   .cardHeader {
     padding: 20px 20px 10px 20px;
+  }
+
+  /* Modal de Utilidades Responsivo en Dispositivos Móviles y Tabletas */
+  .modalOverlay {
+    padding: 12px;
+  }
+
+  .modalContentSheet {
+    max-height: 92vh;
+    border-radius: 16px;
+  }
+
+  .modalHeaderApple {
+    padding: 14px 18px;
+  }
+
+  .modalHeaderApple h2 {
+    font-size: 1.05rem;
+  }
+
+  .modalBodyApple {
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .modalSidebarApple {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    padding: 14px 16px;
+    max-height: 180px;
+    box-sizing: border-box;
+    flex-shrink: 0;
+  }
+
+  .utilidadesAppleList {
+    max-height: 110px;
+  }
+
+  .modalFormApple {
+    padding: 18px 16px;
+    gap: 18px;
+    overflow-y: visible;
+  }
+
+  .areasPillsGrid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    max-height: 140px;
+  }
+
+  .formInlineRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    background-color: #f5f5f7;
+    padding: 12px 14px;
+    border-radius: 12px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .formInlineGroup {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .modalActionsApple {
+    flex-direction: column-reverse;
+    gap: 8px;
+    padding: 14px 16px;
+    margin: 8px -16px -18px -16px;
+    border-bottom-left-radius: 16px;
+    border-bottom-right-radius: 16px;
+    background-color: #f5f5f7;
+  }
+
+  .cancelAppleBtn,
+  .deleteAppleBtn,
+  .saveAppleBtn {
+    width: 100%;
+    justify-content: center;
+    padding: 11px 16px;
+    font-size: 0.88rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .modalOverlay {
+    padding: 8px;
+  }
+
+  .areasPillsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .labelSubtext {
+    display: none;
+  }
+
+  .floatingLabelNotch {
+    font-size: 0.68rem;
+    left: 8px;
+    max-width: 60%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .floatingActionNotch {
+    font-size: 0.68rem;
+    right: 8px;
   }
 }

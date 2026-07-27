@@ -30,9 +30,9 @@ Se accede en `https://aplicativo.supermercadobelalcazar.com` desde navegador, co
 ### 1.1 Visión resumida
 
 - **Público único:** empleados de Abastecemos de Occidente S.A.S. — el aplicativo **no es de cara al cliente**.
-- **Alcance:** 19 dominios funcionales operativos (ver §3).
-- **Escala:** 72 usuarios activos, 14 sedes, 2 empresas del grupo (Abastecemos y Tobar), ~63 tablas MySQL propias + integración con ~20 tablas del ERP.
-- **Estado:** en producción y evolucionando activamente hacia una arquitectura modular (SRA).
+- **Alcance:** 19 dominios funcionales operativos (ver §3) + módulos administrativos.
+- **Escala:** 72 usuarios activos, 14 sedes, 2 empresas del grupo (Abastecemos y Tobar), **64 tablas MySQL** propias + integración con ~20 tablas del ERP.
+- **Estado:** en producción y evolucionando activamente. Desde v1.x (17 jul 2026) el backend expone tres superficies API coexistentes: legacy, `api/v1/public` (consumo externo con X-API-KEY) y `api/v1/private` (consumo interno moderno). Desde v1.2 (24 jul 2026) autenticación con Microsoft incluye Silent SSO.
 
 ### 1.2 Roles principales del sistema
 
@@ -119,8 +119,8 @@ Resumen de una línea:
 | --------------- | -------------------------------------------------- | -------------------------------------------- |
 | Frontend SPA    | React 19.2, Vite 7.1, React Router 7               | UI + orquestación de peticiones              |
 | Backend cPanel  | PHP 7/8, PDO, Apache                               | Gateway de identidad + persistencia propia   |
-| Framework LAN   | PHP puro (~250 líneas de núcleo, sin dependencias) | Router monolítico a 30 acciones sobre el ERP |
-| Base MySQL      | MySQL 8.0.37                                       | 63 tablas + 1 vista del aplicativo           |
+| Framework LAN   | PHP puro (~250 líneas de núcleo, sin dependencias) | Router monolítico a 33 acciones sobre el ERP (30 originales + 3 v1.x en `ProveedoresRepo`) |
+| Base MySQL      | MySQL 8.0.37                                       | 64 tablas + 1 vista del aplicativo (era 63+1 hasta v1.x)  |
 | Base PostgreSQL | Siesa Biable (ERP)                                 | 2 empresas: `biable01`, `biable02`           |
 | DNS / borde     | Cloudflare                                         | DNS + WAF + TLS + Tunnel                     |
 | SSO             | Microsoft 365 / Entra ID                           | Login federado opcional                      |
@@ -132,22 +132,44 @@ Ver [04 · Frontend](./04-arquitectura-frontend.md) y [13 · Dependencias](./13-
 
 ## 5 · Números clave
 
-Estado actual observable (14 de julio de 2026):
+Estado actual observable (28 de julio de 2026):
 
-| Métrica                               | Valor                    |
-| ------------------------------------- | ------------------------ |
-| Usuarios en la BD                     | 72 (histórico + activos) |
-| Roles configurados                    | 2 (`admin`, `usuario`)   |
-| Sedes físicas                         | 14                       |
-| Empresas del grupo                    | 2 (Abastecemos, Tobar)   |
-| Endpoints backend cPanel              | ~110                     |
-| Acciones registradas en framework LAN | 30                       |
-| Tablas MySQL del aplicativo           | 63 + 1 vista             |
-| Módulos funcionales frontend          | 19                       |
-| Dependencias npm                      | 27 runtime + 11 dev      |
-| Dependencias PHP vendorizadas         | 7                        |
-| Cronjobs activos                      | 6                        |
-| Terminales POS en LAN                 | ~15 (varias sedes)       |
+| Métrica                               | Valor                                        |
+| ------------------------------------- | -------------------------------------------- |
+| Usuarios en la BD                     | 72 (histórico + activos)                     |
+| Roles configurados                    | 2 (`admin`, `usuario`)                       |
+| Sedes físicas                         | 14                                           |
+| Empresas del grupo                    | 2 (Abastecemos, Tobar)                       |
+| **Endpoints backend cPanel**          | ~110 legacy + 5 en superficies v1 = **~115** |
+| **Acciones registradas en framework LAN** | **33** (30 originales + 3 en `ProveedoresRepo` v1.x) |
+| **Tablas MySQL del aplicativo**       | **64** + 1 vista (era 63 + 1 hasta v1.x)     |
+| Módulos funcionales frontend          | 19                                           |
+| **Dependencias npm**                  | **28 runtime** + 11 dev (era 27+11 hasta v1.x; se sumó `darkreader`) |
+| Dependencias PHP vendorizadas         | 7                                            |
+| Cronjobs activos                      | 6                                            |
+| Terminales POS en LAN                 | ~15 (varias sedes)                           |
+
+---
+
+## 5bis · Cambios recientes destacables
+
+**v1.x — 17 de julio de 2026:**
+
+- **Superficies API v1 (pública y privada)** con núcleo compartido — patrón moderno para consumo externo e interno formal.
+- **`ProveedoresRepo`** en framework LAN alimentando la superficie pública.
+- **`api_keys` hasheadas SHA-256** con scopes e IP allowlist. Cierre parcial de deuda de seguridad.
+- **Modo oscuro** con DarkReader (primer TypeScript del proyecto).
+- **Bloque de utilidades del dashboard** con nueva tabla `dashboard_utilidades`.
+- **`update_informe.php`** con patch semantics defensivas y **`create_informe.php`** con auto-orden.
+- **Fix `usePrefijosDian`** — excepción silenciosa corregida.
+
+**v1.2 — 24 de julio de 2026:**
+
+- **Silent SSO con Microsoft** — sesión corporativa detectada automáticamente al cargar `/login`.
+- **Refactor del módulo Auth** — nuevo ejemplo canónico del patrón thin orchestrator con 7 componentes + 2 hooks + 1 utilitario.
+- **Fix del bucle infinito de logout** con circuit breaker en `sessionStorage`.
+
+Ver detalle en [README §0](./README.md) y en el `CHANGELOG.md` del proyecto de documentación.
 
 ---
 
@@ -293,11 +315,24 @@ Ver [`README.md`](./README.md) para el índice completo con estado de cada docum
 
 ## 12 · Cambios importantes recientes
 
+**Cambios de fondo (previos al análisis inicial):**
+
 - **Refactor del `api.js` centralizado** — extracción a `utils/http/*` con `request()` declarativo.
 - **Extensión del sistema de permisos** — de checkbox binario a granular (ver/crear/editar/eliminar) por rol × cargo × menú.
 - **Consolidación del logger central** con endpoint `logs/ingest.php`.
 - **Migración gradual de módulos** al patrón "thin orchestrator + hooks/components/utils".
 - **Adopción del design system "Apple-inspired"** con `#f5f5f7`, `#03996b`, tipografía `-apple-system`, radios `16px`.
+
+**Evolución posterior al análisis inicial (ver §5bis):**
+
+- **Superficies API v1** pública y privada — nuevo patrón arquitectónico (Patrón C) con envelope estándar, correlation IDs y hardening por defecto.
+- **Autenticación de aplicaciones** con API keys hasheadas, scopes e IP allowlist.
+- **Silent SSO con Microsoft** — reduce fricción de login a cero para empleados con sesión corporativa activa.
+- **TypeScript introducido incrementalmente** — coexistencia por diseño con JS/JSX, sin migración masiva.
+- **Modo oscuro** con DarkReader.
+- **Dashboard con utilidades** configurables por área.
+
+El sistema **evoluciona activamente**. La documentación se actualiza pase por pase para reflejar el estado real — ver `CHANGELOG.md` del proyecto de documentación para el historial.
 
 ---
 

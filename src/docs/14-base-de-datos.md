@@ -23,7 +23,7 @@
 
 ## 1 · Objetivo
 
-Documentar el **modelo de datos** completo del sistema: las 63 tablas de MySQL con su esquema, agrupadas por dominio funcional, con diagramas entidad-relación (ERD) por bloque, cardinalidades, claves primarias y foráneas, y anotaciones semánticas. Se documenta también el **esquema PostgreSQL del ERP** (Siesa Biable) tal como es consultado por el framework LAN — con la advertencia de que **el modelo PostgreSQL no está bajo control del aplicativo**; se documenta a partir de las queries encontradas en `repo/modules/**`.
+Documentar el **modelo de datos** completo del sistema: las 64 tablas de MySQL con su esquema, agrupadas por dominio funcional, con diagramas entidad-relación (ERD) por bloque, cardinalidades, claves primarias y foráneas, y anotaciones semánticas. Se documenta también el **esquema PostgreSQL del ERP** (Siesa Biable) tal como es consultado por el framework LAN — con la advertencia de que **el modelo PostgreSQL no está bajo control del aplicativo**; se documenta a partir de las queries encontradas en `repo/modules/**`.
 
 ---
 
@@ -33,7 +33,7 @@ Documentar el **modelo de datos** completo del sistema: las 63 tablas de MySQL c
 
 | BD                     | Motor        | Host   | Nombre                         | Tablas                  | Documentado en |
 | ---------------------- | ------------ | ------ | ------------------------------ | ----------------------- | -------------- |
-| **Aplicativo interno** | MySQL 8.0.37 | cPanel | `supermer_AplicativoSistemas`  | **63 tablas + 1 vista** | §3–§10         |
+| **Aplicativo interno** | MySQL 8.0.37 | cPanel | `supermer_AplicativoSistemas`  | **64 tablas + 1 vista** | §3–§10         |
 | ERP empresa A          | PostgreSQL   | LAN    | `biable01` (Abastecemos)       | (esquema del ERP)       | §11            |
 | ERP empresa B          | PostgreSQL   | LAN    | `biable02` (Tobar)             | (idem estructural)      | §11            |
 | Aplicativo Proveedores | MySQL        | cPanel | `supermer_AplicativoProveedor` | (fuera del alcance)     | §12            |
@@ -55,7 +55,7 @@ Todas las tablas son **InnoDB** — soporta transacciones, foreign keys y row-le
 
 ## 3 · Agrupación por dominio funcional
 
-Las 63 tablas se dividen en **11 dominios**:
+Las 64 tablas se dividen en **11 dominios**:
 
 ```mermaid
 flowchart TB
@@ -63,7 +63,7 @@ flowchart TB
         SEG1[usuarios · sesiones · password_resets<br/>roles · cargos · areas · sedes<br/>menus · rol_menu · cargo_menu]
     end
     subgraph SIS["⚙️ Sistemas (5)"]
-        SIS1[sys_logs · api_keys<br/>empresas · informes<br/>informe_area · informe_cargo]
+        SIS1[sys_logs · api_keys<br/>empresas · informes<br/>informe_area · informe_cargo<br/>dashboard_utilidades]
     end
     subgraph ACT["📄 Actas y entregas TI (1)"]
         ACT1[actas_entrega]
@@ -97,12 +97,12 @@ flowchart TB
     end
 ```
 
-**Total: 63 tablas + 1 vista.** Distribuidas de esta forma:
+**Total: 64 tablas + 1 vista.** Distribuidas de esta forma:
 
 | Dominio                 |           # tablas | Rol                                                          | Detalle en § |
 | ----------------------- | -----------------: | ------------------------------------------------------------ | ------------ |
 | Seguridad y sesión      |                 10 | Identidad, autenticación, RBAC                               | §4           |
-| Sistemas / plataforma   |                  5 | Logs, API keys, empresas, informes                           | §5           |
+| Sistemas / plataforma   |                  6 | Logs, API keys, empresas, informes, dashboard_utilidades     | §5           |
 | Actas de entrega TI     |                  1 | Actas firmadas de entrega de equipos                         | §6           |
 | Fruver                  |                  2 | Catálogo y pedidos                                           | §7           |
 | Carnes                  |                  3 | Pedidos con cabecera-detalle                                 | §7           |
@@ -236,14 +236,38 @@ erDiagram
 
 ⚠ Riesgo documentado en 12 §10.2: sin política de rotación, la tabla crece indefinidamente.
 
-**`api_keys`** — llaves de API para sistemas integrados:
+**`api_keys`** — llaves de API para sistemas integrados. **Ampliada en v1.x (2026-07-17)** con hash SHA-256, scopes e IP allowlist como parte del rollout de la superficie `api/v1/public` (ver [03 §API v1](./03-arquitectura-backend.md) y [10 §5](./10-autenticacion.md)):
 
-| Columna      | Tipo         | Rol                                                                       |
-| ------------ | ------------ | ------------------------------------------------------------------------- |
-| `id`         | int PK       | —                                                                         |
-| `llave`      | varchar(64)  | Token (⚠ almacenado en claro)                                             |
-| `aplicacion` | varchar(100) | Descripción del cliente (`aplicativo proveedor`, `API_Biable_Logs`, etc.) |
-| `activa`     | tinyint      | Bandera                                                                   |
+| Columna            | Tipo         | Rol                                                                                          |
+| ------------------ | ------------ | -------------------------------------------------------------------------------------------- |
+| `id`               | int PK       | —                                                                                            |
+| `llave`            | varchar(64)  | Token en texto plano (⚠ **legacy** — mantenido temporalmente como fallback durante migración) |
+| `llave_hash`       | varchar(64)  | Hash SHA-256 de la llave — es el valor autoritativo desde v1.x                              |
+| `aplicacion`       | varchar(100) | Descripción del cliente (`aplicativo proveedor`, `API_Biable_Logs`, integraciones externas)  |
+| `scopes`           | varchar/json | Alcance permitido — ej. `comercial.proveedores`, `*` para todo. Ver [11 §7](./11-autorizacion.md) |
+| `ips_permitidas`   | varchar/json | Allowlist opcional de IPs. NULL = sin restricción                                            |
+| `ultimo_uso`       | timestamp    | Última vez que se validó exitosamente esta key                                               |
+| `creada_en`        | timestamp    | Alta de la key                                                                               |
+| `activa`           | tinyint      | Bandera                                                                                      |
+
+**Migración de fase 5** (documentada en 26): eliminar la columna `llave` en texto plano una vez todas las apps consumidoras estén migradas a llaves hasheadas.
+
+**`dashboard_utilidades`** — **añadida en v1.x (2026-07-17)**. Accesos directos configurables del bloque "Utilidades" del dashboard principal, con filtrado por área:
+
+| Columna             | Tipo                 | Rol                                                                                    |
+| ------------------- | -------------------- | -------------------------------------------------------------------------------------- |
+| `id`                | INT UNSIGNED PK      | Auto-increment                                                                         |
+| `titulo`            | varchar(100) NOT NULL| Etiqueta visible                                                                       |
+| `descripcion`       | varchar(255)         | Tooltip opcional                                                                       |
+| `url_destino`       | varchar(500) NOT NULL| URL a la que se navega — interna (`/contabilidad/…`) o externa                        |
+| `url_icono`         | varchar(500)         | URL del ícono o nombre de ícono lucide                                                 |
+| `areas_permitidas`  | JSON                 | Array de códigos/IDs de áreas. NULL o `[]` = **visibilidad global**                    |
+| `estado`            | tinyint(1) NOT NULL  | `1` activo, `0` inactivo. DEFAULT 1                                                    |
+| `orden`             | int NOT NULL         | Orden de visualización. DEFAULT 0                                                      |
+| `created_at`        | timestamp            | Alta                                                                                   |
+| `updated_at`        | timestamp            | Última modificación                                                                    |
+
+**Regla de visibilidad:** un usuario ve una utilidad si `areas_permitidas` es NULL/`[]` **o** si su `id_area` está incluido en el JSON. La lógica se aplica en el endpoint de consulta, no en frontend.
 
 **`empresas`** — catálogo maestro:
 

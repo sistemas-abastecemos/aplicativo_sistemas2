@@ -76,32 +76,34 @@ gantt
 
 ### 4.1 Iniciativas
 
-| #     | Iniciativa                                                     | Referencia             | Esfuerzo     |
-| ----- | -------------------------------------------------------------- | ---------------------- | ------------ |
-| H1-01 | Rate limit en `login.php` y `login_microsoft.php`              | 25·P1.2 · R-S02        | XS           |
-| H1-02 | Migrar credenciales BD y SMTP a `.env`                         | 25·P1.1 · R-S01        | S            |
-| H1-03 | Headers de seguridad en `.htaccess` (HSTS, CSP, X-Frame, etc.) | 25·P1.3 · R-S09        | XS           |
-| H1-04 | Retención automática de `sys_logs`                             | 25·P1.4 · R-E01        | XS           |
-| H1-05 | Uniformar respuesta de login (mitigar enumeración)             | 25·P1.5 · R-S05        | XS           |
-| H1-06 | Eliminar `.env.bak` del framework LAN                          | 25·P1.6                | XS           |
-| H1-07 | Agenda de rotación de secretos con recordatorios               | 25·P1.7 · R-S06, R-S08 | XS           |
-| H1-08 | Gate del Lector de Precios server-side                         | 25·P4.1 · R-S04        | S            |
-| H1-09 | Ambiente de staging (subdominio + BD test)                     | 25·P3.4 · R-A04        | M            |
-| H1-10 | Completar documentación técnica (este esfuerzo)                | —                      | M (en curso) |
-| H1-11 | Verificar modo TLS Cloudflare Full Strict                      | R-S10                  | XS           |
-| H1-12 | Verificar que backups MySQL son restaurables                   | R-I04                  | S            |
+| #     | Iniciativa                                                     | Referencia             | Esfuerzo     | Estado (28 jul 2026)                                                             |
+| ----- | -------------------------------------------------------------- | ---------------------- | ------------ | -------------------------------------------------------------------------------- |
+| H1-01 | Rate limit en `login.php` y `login_microsoft.php`              | 25·P1.2 · R-S02        | XS           | 🟡 Parcial — patrón ya aplicado en `api/v1/public` (30/min). Portar al legacy.  |
+| H1-02 | Migrar credenciales BD y SMTP a `.env`                         | 25·P1.1 · R-S01        | S            | ⏳ Pendiente                                                                      |
+| H1-03 | Headers de seguridad en `.htaccess` (HSTS, CSP, X-Frame, etc.) | 25·P1.3 · R-S09        | XS           | 🟡 Parcial — X-Content-Type, X-Frame, Referrer-Policy, sin X-Powered-By en superficies v1. Falta HSTS + CSP + portar al legacy. |
+| H1-04 | Retención automática de `sys_logs`                             | 25·P1.4 · R-E01        | XS           | ⏳ Pendiente                                                                      |
+| H1-05 | Uniformar respuesta de login (mitigar enumeración)             | 25·P1.5 · R-S05        | XS           | ⏳ Pendiente                                                                      |
+| H1-06 | Eliminar `.env.bak` del framework LAN                          | 25·P1.6                | XS           | ⏳ Pendiente                                                                      |
+| H1-07 | Agenda de rotación de secretos con recordatorios               | 25·P1.7 · R-S06, R-S08 | XS           | ⏳ Pendiente                                                                      |
+| H1-08 | Gate del Lector de Precios server-side                         | 25·P4.1 · R-S04        | S            | ⏳ Pendiente                                                                      |
+| H1-09 | Ambiente de staging (subdominio + BD test)                     | 25·P3.4 · R-A04        | M            | ⏳ Pendiente                                                                      |
+| H1-10 | Completar documentación técnica (este esfuerzo)                | —                      | M (en curso) | ✅ Iteración v1.2 completada — 28 documentos actualizados                        |
+| H1-11 | Verificar modo TLS Cloudflare Full Strict                      | R-S10                  | XS           | ⏳ Pendiente                                                                      |
+| H1-12 | Verificar que backups MySQL son restaurables                   | R-I04                  | S            | ⏳ Pendiente                                                                      |
+| H1-13 | **Migración fase 5** — eliminar `api_keys.llave` en plano (v1.x) | 12·§12 hallazgo #13    | XS           | ⏳ Nuevo — introducido con la migración de API v1                                |
 
 ### 4.2 Criterios de éxito H1
 
-- ✅ Ninguna credencial en código PHP versionable.
-- ✅ Rate limit funcional en login.
-- ✅ Headers de seguridad presentes en response HTML.
-- ✅ Staging existe y se usa antes de cada deploy a producción.
-- ✅ 28 documentos técnicos entregados.
-- ✅ Backup MySQL probado (restauración exitosa una vez).
-- ✅ Agenda de expiración de secretos publicada.
+- ⏳ Ninguna credencial en código PHP versionable.
+- 🟡 Rate limit funcional en login **legacy** (ya lo hay en v1 pública).
+- 🟡 Headers de seguridad presentes en response HTML **legacy** (ya los hay en v1).
+- ⏳ Staging existe y se usa antes de cada deploy a producción.
+- ✅ **28 documentos técnicos entregados y actualizados hasta v1.2.**
+- ⏳ Backup MySQL probado (restauración exitosa una vez).
+- ⏳ Agenda de expiración de secretos publicada.
+- ✅ **Todas las apps consumidoras migradas a `api_keys.llave_hash`** — condición para poder ejecutar la fase 5.
 
-**Presupuesto:** ~4 semanas persona.
+**Presupuesto:** ~4 semanas persona (era 4; con lo ya adelantado en v1.x, ~2.5 semanas restantes efectivas).
 
 ---
 

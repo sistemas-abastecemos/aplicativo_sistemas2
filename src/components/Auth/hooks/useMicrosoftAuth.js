@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useAuth } from "../../../contexts/AuthContext";
-import { useNavigate } from "react-router-dom";
 import { buildMicrosoftAuthUrl } from "../utils/microsoftAuth";
 
 const SILENT_CHECK_KEY = "ms_silent_login_attempted";
 const LOGGED_OUT_KEY = "user_logged_out";
 
-// Evaluacion sincrona antes del primer pintado en pantalla
 const checkShouldAutoLogin = () => {
   if (typeof window === "undefined") return false;
 
@@ -23,17 +21,20 @@ const checkShouldAutoLogin = () => {
 
 export const useMicrosoftAuth = (setError) => {
   const { loginWithMicrosoft } = useAuth();
-  const navigate = useNavigate();
-
-  // Se inicializa en true SÍNCRONAMENTE si cumple las condiciones de auto-login
   const [cargandoMS, setCargandoMS] = useState(() => checkShouldAutoLogin());
   const loginProcesadoRef = useRef(false);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get("code");
+    const stateParam = urlParams.get("state");
     const msError = urlParams.get("error");
     const isLogout = urlParams.get("logout") === "true";
+
+    // Si Microsoft retorno el parametro state (ruta destino), lo preservamos
+    if (stateParam && stateParam !== "/login") {
+      sessionStorage.setItem("returnUrl", stateParam);
+    }
 
     const cleanUrlParams = () => {
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -65,7 +66,6 @@ export const useMicrosoftAuth = (setError) => {
           if (result?.success) {
             sessionStorage.removeItem(SILENT_CHECK_KEY);
             sessionStorage.removeItem(LOGGED_OUT_KEY);
-            navigate("/inicio", { replace: true });
           } else {
             setError(result?.message || "Fallo la autenticacion corporativa.");
             setCargandoMS(false);
@@ -97,7 +97,7 @@ export const useMicrosoftAuth = (setError) => {
     } else {
       setCargandoMS(false);
     }
-  }, [loginWithMicrosoft, navigate, setError]);
+  }, [loginWithMicrosoft, setError]);
 
   const handleManualMicrosoftLogin = useCallback(() => {
     try {

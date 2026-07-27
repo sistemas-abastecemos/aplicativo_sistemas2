@@ -31,7 +31,7 @@ Inventariar **todas las librerías y dependencias externas** utilizadas por cada
 
 | Capa                       | Gestor                     |                     Cantidad | Estrategia de distribución                   |
 | -------------------------- | -------------------------- | ---------------------------: | -------------------------------------------- |
-| Frontend                   | npm (`package.json`)       | **27 runtime + 11 dev = 38** | `node_modules/` — reconstruido en cada build |
+| Frontend                   | npm (`package.json`)       | **28 runtime + 11 dev = 39** | `node_modules/` — reconstruido en cada build |
 | Backend cPanel             | Copia directa              | **7 librerías vendorizadas** | Copiadas en `backend/utils/`                 |
 | Backend cPanel — `vendor/` | Composer (parcial)         |          4 paquetes visibles | `backend/utils/vendor/` con `autoload.php`   |
 | Framework LAN              | **Ninguna**                |                            0 | Solo PHP estándar (PDO, cURL, json\_\*)      |
@@ -43,7 +43,7 @@ Inventariar **todas las librerías y dependencias externas** utilizadas por cada
 
 ## 3 · Frontend — dependencias runtime
 
-Fuente: `frontend/package.json`. Total: **27 dependencias runtime**.
+Fuente: `frontend/package.json`. Total: **28 dependencias runtime** (era 27 hasta v1.x; se sumó `darkreader`).
 
 ### 3.1 Núcleo React + Vite
 
@@ -75,6 +75,32 @@ Fuente: `frontend/package.json`. Total: **27 dependencias runtime**.
 | `react-transition-group` | `^4.4.5`    | Transiciones CSS legacy — se usa en componentes antiguos |
 
 ⚠ Coexisten dos librerías de animación. Recomendación: migrar todo a `framer-motion`.
+
+### 3.3bis Tematización — modo oscuro (añadido en v1.x, 2026-07-17)
+
+| Paquete      | Versión         | Propósito                                                                          |
+| ------------ | --------------- | ---------------------------------------------------------------------------------- |
+| `darkreader` | `^4.9.x` (verificar) | Aplicar modo oscuro **dinámicamente** al DOM sin escribir CSS por componente |
+
+`DarkReader` inspecciona el DOM y genera reglas CSS invertidas al vuelo. Ventajas frente a hacer el modo oscuro con variables CSS o clases:
+
+- **Cero cambios** en el CSS existente de cada módulo — funciona sobre el sistema visual actual (`#03996b`, `#f5f5f7`, `-apple-system`) sin refactor.
+- **Consistencia** — el algoritmo aplica la misma lógica a todos los componentes.
+- **Reversible** — un toggle activa/desactiva sin recargar la app.
+
+**Trade-off:** el algoritmo no es infalible en imágenes, íconos y componentes con muchos gradientes; hay componentes que pueden requerir ajustes específicos (ver §3.3bis.2).
+
+#### 3.3bis.1 Integración
+
+- Hook **TypeScript** `useDarkMode.ts` que persiste la preferencia en `localStorage` y aplica/quita el modo con `enable()` / `disable()` de DarkReader.
+- Toggle en la **topbar** que dispara el hook.
+- Al arrancar la app, el hook lee la preferencia guardada y la aplica antes del primer render.
+
+#### 3.3bis.2 Riesgos y ajustes conocidos
+
+- **Logo corporativo** e íconos SVG con colores fijos pueden verse mal invertidos — DarkReader tiene una lista de exclusión (`ignoreImageAnalysis`) para forzar mantener colores originales en ciertos selectores.
+- **Módulo Publicidad** (`TemplateCanvas`) trabaja con SVG que representan la etiqueta impresa — **debe excluirse** del modo oscuro porque la impresión será siempre en fondo blanco. Se sugiere excluir todo `.publicidad-canvas *`.
+- **Iframes de informes externos** (Power BI, Metabase) — el modo oscuro **no atraviesa iframes cross-origin**. Cada proveedor tiene su propio tema. Actualmente es una limitación aceptada.
 
 ### 3.4 Documentos y exportación
 

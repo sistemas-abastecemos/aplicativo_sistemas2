@@ -49,9 +49,10 @@ Además existen dos actores auxiliares:
 
 ```mermaid
 flowchart TB
-    subgraph USUARIO["Navegador del usuario"]
+    subgraph USUARIO["Navegador del usuario / Consumidor externo"]
         direction TB
         SPA["<b>SPA React 19 + Vite 7</b><br/>React Router 7 · Contexts<br/>localStorage: authToken"]
+        EXT["<b>Consumidor externo</b><br/>(front-ends terceros, scripts, Postman)<br/>Header X-API-KEY"]
         WSAGENT["Agente local<br/>ws://127.0.0.1:8181<br/>(solo módulo Publicidad)"]
     end
 
@@ -64,11 +65,17 @@ flowchart TB
     subgraph CPANEL["Hosting cPanel — aplicativo.supermercadobelalcazar.com"]
         direction TB
         APACHE["Apache + PHP 7/8"]
-        BEAPI["<b>Backend API</b><br/>/api/**  (100+ endpoints)<br/>cors · auth · permisos · logs"]
+        BEAPI["<b>Backend API — legacy</b><br/>/api/** (~110 endpoints)<br/>cors · auth · permisos · logs"]
+        BEAPIV1PUB["<b>API v1 pública</b><br/>/api/v1/public/**<br/>X-API-KEY · rate 30/min<br/>envelope + X-Request-ID"]
+        BEAPIV1PRV["<b>API v1 privada</b><br/>/api/v1/private/**<br/>Bearer (sesión) · permisos<br/>envelope + X-Request-ID"]
         CRON["cronjobs<br/>subir_checker_mysql* · verificar_registros_cvm"]
-        MYSQL[("<b>MySQL 8.0</b><br/>supermer_AplicativoSistemas<br/>63 tablas + 1 vista")]
+        MYSQL[("<b>MySQL 8.0</b><br/>supermer_AplicativoSistemas<br/>64 tablas + 1 vista")]
         APACHE --> BEAPI
+        APACHE --> BEAPIV1PUB
+        APACHE --> BEAPIV1PRV
         BEAPI --> MYSQL
+        BEAPIV1PUB --> MYSQL
+        BEAPIV1PRV --> MYSQL
         CRON --> MYSQL
     end
 
@@ -81,9 +88,13 @@ flowchart TB
         MODS --> PG
     end
 
-    SPA -- "HTTPS + Bearer (token de sesión)" --> DNS
+    SPA -- "HTTPS + Bearer (sesión)" --> DNS
+    SPA -. "HTTPS + Bearer" .-> BEAPIV1PRV
+    EXT -- "HTTPS + X-API-KEY" --> DNS
     DNS --> APACHE
     BEAPI -- "cURL POST JSON<br/>Bearer API_SECRET<br/>+ X-Usuario-Origen" --> TUNNEL
+    BEAPIV1PUB -- "LanClient" --> TUNNEL
+    BEAPIV1PRV -- "LanClient" --> TUNNEL
     TUNNEL -- "api-biable.supermercadobelalcazar.com" --> FW
     WSAGENT -. "solo LAN local" .- SPA
     CRON -. "consultan ERP<br/>(vía LAN / red interna)" .-> PG
@@ -102,8 +113,8 @@ flowchart TB
 | C1  | **SPA Frontend**                       | Navegador del usuario    | React 19.2, Vite 7.1, React Router 7.8 | Renderizar UI, gestionar sesión local, ruteo protegido, orquestar llamadas al backend                                                                         | `frontend/package.json`, `frontend/src/App.jsx`, `frontend/src/main.jsx` |
 | C2  | **Cloudflare Edge**                    | Internet (edge)          | Cloudflare DNS + WAF + TLS             | Resolver dominio, terminación TLS, protección DDoS/WAF                                                                                                        | Dominios `supermercadobelalcazar.com`, `aplicativo.…`, `api-biable.…`    |
 | C3  | **Cloudflare Tunnel**                  | Cloudflare ↔ LAN         | `cloudflared`                          | Publicar el framework LAN sin abrir puertos en la LAN                                                                                                         | `backend/api/config/lan_api.php` (URL `api-biable.…`)                    |
-| C4  | **Backend API cPanel**                 | Hosting cPanel           | PHP 7/8, PDO, Apache                   | Autenticación de usuarios, autorización por menú+acción, logging, subida de archivos, envío de correos, generación de PDF/Excel, proxy hacia el framework LAN | `backend/backend/api/**`                                                 |
-| C5  | **MySQL del aplicativo**               | cPanel                   | MySQL 8.0.37                           | Persistencia del aplicativo: usuarios, sesiones, permisos, menús, pedidos, actas, visitantes, logs, CVM, plantillas                                           | `mysqlphpmyadmin.sql` (63 tablas)                                        |
+| C4  | **Backend API cPanel**                 | Hosting cPanel           | PHP 7/8, PDO, Apache                   | Autenticación de usuarios, autorización por menú+acción, logging, subida de archivos, envío de correos, generación de PDF/Excel, proxy hacia el framework LAN. **Desde v1.x (2026-07-17): expone 3 superficies — legacy (`/api/…`), pública v1 (`/api/v1/public`), privada v1 (`/api/v1/private`)** | `backend/backend/api/**`, `backend/backend/api/v1/**`                                                 |
+| C5  | **MySQL del aplicativo**               | cPanel                   | MySQL 8.0.37                           | Persistencia del aplicativo: usuarios, sesiones, permisos, menús, pedidos, actas, visitantes, logs, CVM, plantillas, api_keys, dashboard_utilidades                | `mysqlphpmyadmin.sql` (64 tablas)                                        |
 | C6  | **Cronjobs**                           | cPanel                   | PHP CLI                                | Replicar/verificar datos ERP hacia MySQL por sede                                                                                                             | `backend/backend/cron/*.php`                                             |
 | C7  | **Framework LAN**                      | Servidor interno LAN     | PHP + PDO PostgreSQL                   | Router monolítico por `accion`, ejecuta la lógica de cada acción y consulta al ERP                                                                            | `repo/index.php`, `repo/core/*`, `repo/modules/**`                       |
 | C8  | **PostgreSQL del ERP**                 | LAN                      | PostgreSQL                             | Datos maestros del ERP Siesa Biable de dos empresas                                                                                                           | `repo/core/database.php`, `.env` (bases `biable01`, `biable02`)          |
@@ -129,7 +140,15 @@ flowchart TB
 - **Envío de correos** (PHPMailer) y **generación de documentos** (TCPDF, FPDF, PhpSpreadsheet, ZipStream).
 - **Logging centralizado** (`api/logs/ingest.php`, `api/utils/remote_logger.php`) con fallback local.
 
-**C5 — MySQL del aplicativo.** Base de datos `supermer_AplicativoSistemas` con 63 tablas y 1 vista. Alberga la lógica de negocio propia del aplicativo (no del ERP). El detalle completo del modelo relacional se cubre en el documento 14.
+Desde **v1.x (2026-07-17)**, el backend cPanel expone tres superficies coexistentes:
+
+- **Legacy (`/api/…`)** — ~110 endpoints originales, patrones A/B, envelope `{success, data}`, sin rate limit ni headers de seguridad.
+- **Pública v1 (`/api/v1/public`)** — consumo externo autenticado por `X-API-KEY`, rate limit 30/min, envelope `{success, meta, data|error}` con `X-Request-ID`, headers de seguridad. Ver [03 §5.3](./03-arquitectura-backend.md).
+- **Privada v1 (`/api/v1/private`)** — consumo interno del SPA, reutiliza sesión y permisos granulares, envelope estándar v1.
+
+Ambas superficies v1 comparten núcleo (`bootstrap.php`, `Response.php`, `Controller.php`) — código nuevo se construye contra este patrón; legacy se refactoriza gradualmente.
+
+**C5 — MySQL del aplicativo.** Base de datos `supermer_AplicativoSistemas` con **64 tablas y 1 vista** (agregada en v1.x: `dashboard_utilidades`; ampliada: `api_keys` con `llave_hash`, `scopes`, `ips_permitidas`). Alberga la lógica de negocio propia del aplicativo (no del ERP). El detalle completo del modelo relacional se cubre en el documento 14.
 
 **C6 — Cronjobs.** Se detectan cinco variantes por sede (`subir_checker_mysql.php`, `_2`, `_5`, `_8`, `_11`) y una tarea de verificación (`verificar_registros_cvm.php`). Aún requieren análisis más profundo antes de documentarlos definitivamente (ver README §3.2, item 1).
 

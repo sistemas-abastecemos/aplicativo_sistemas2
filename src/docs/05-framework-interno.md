@@ -142,6 +142,10 @@ $rutas = [
     'buscar_motivo_por_id'                    => ['MotivosRepo',       'buscarPorId'],
     'listar_lineas'                           => ['LineasRepo',        'listar'],
     'buscar_lineas'                           => ['LineasRepo',        'buscar'],
+    // Añadidas en v1.x — alimentan la superficie api/v1/public/proveedores
+    'general/listar_proveedores'              => ['ProveedoresRepo',   'listar'],
+    'general/buscar_proveedores_biable'       => ['ProveedoresRepo',   'buscar'],
+    'general/buscar_proveedor_id'             => ['ProveedoresRepo',   'buscarPorId'],
     // …
     'system/database_status_check'            => ['SystemStatusRepo',  'verificarEstadoBaseDatos']
 ];
@@ -456,18 +460,21 @@ sequenceDiagram
 
 ## 11 · Catálogo actual de acciones registradas
 
-Total: **18 acciones** en producción, agrupadas por módulo. Este catálogo se mantiene sincronizado con el mapa `$rutas` de `repo/index.php`.
+Total: **21 clases-Repo / 33 acciones** en producción, agrupadas por módulo. Este catálogo se mantiene sincronizado con el mapa `$rutas` de `repo/index.php`.
 
 ### 11.1 Módulo `general`
 
-| Acción                 | Clase::método              | Propósito                 |
-| ---------------------- | -------------------------- | ------------------------- |
-| `listar_motivos`       | `MotivosRepo::listar`      | Listar motivos (tope 10)  |
-| `buscar_motivo_por_id` | `MotivosRepo::buscarPorId` | Motivo específico         |
-| `listar_lineas`        | `LineasRepo::listar`       | Listar líneas de producto |
-| `buscar_lineas`        | `LineasRepo::buscar`       | Buscar línea por término  |
-| `listar_bodegas`       | `BodegasRepo::listar`      | Listar bodegas            |
-| `buscar_bodegas`       | `BodegasRepo::buscar`      | Buscar bodega             |
+| Acción                                       | Clase::método                     | Propósito                                                    |
+| -------------------------------------------- | --------------------------------- | ------------------------------------------------------------ |
+| `listar_motivos`                             | `MotivosRepo::listar`             | Listar motivos (tope 10)                                     |
+| `buscar_motivo_por_id`                       | `MotivosRepo::buscarPorId`        | Motivo específico                                            |
+| `listar_lineas`                              | `LineasRepo::listar`              | Listar líneas de producto                                    |
+| `buscar_lineas`                              | `LineasRepo::buscar`              | Buscar línea por término                                     |
+| `listar_bodegas`                             | `BodegasRepo::listar`             | Listar bodegas                                               |
+| `buscar_bodegas`                             | `BodegasRepo::buscar`             | Buscar bodega                                                |
+| `general/listar_proveedores` **(v1.x)**      | `ProveedoresRepo::listar`         | Listar proveedores desde vista `proveedores` de Biable       |
+| `general/buscar_proveedores_biable` **(v1.x)** | `ProveedoresRepo::buscar`       | Buscar proveedor por código/NIT o descripción                |
+| `general/buscar_proveedor_id` **(v1.x)**     | `ProveedoresRepo::buscarPorId`    | Buscar por llave compuesta código + sucursal                 |
 
 ### 11.2 Módulo `comercial`
 
@@ -512,7 +519,30 @@ Total: **18 acciones** en producción, agrupadas por módulo. Este catálogo se 
 | ------------------------------ | -------------------------------------------- |
 | `system/database_status_check` | `SystemStatusRepo::verificarEstadoBaseDatos` |
 
-**Total real: 30 acciones.** (El "18" que mencioné antes correspondía a los `require_once`; las acciones registradas son más porque una misma clase expone varios métodos.)
+**Total real: 33 acciones** (30 originales + 3 añadidas en v1.x para la superficie API pública). El "18" corresponde a los `require_once`; las acciones registradas son más porque una misma clase expone varios métodos.
+
+### 11.6 Detalle · `ProveedoresRepo` (nuevo en v1.x)
+
+Añadido en 2026-07-17 para alimentar la superficie `api/v1/public/proveedores`. Consulta la **vista `proveedores` de Biable** (no tabla) con conmutación dinámica de empresa:
+
+```php
+class ProveedoresRepo {
+    public function listar($input) {
+        $empresa = ($input['empresa'] === 'tobar') ? 'biable02' : 'biable01';
+        $pdo = Database::getInstance($empresa)->getPDO();
+        $stmt = $pdo->query("SELECT nit, sucursal, nombre, cod_banco, banco, dias_pgo, cond_pgo, porc_dscto FROM proveedores WHERE activo = 1 ORDER BY nombre");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function buscar($input) { /* búsqueda por código/NIT o descripción */ }
+
+    public function buscarPorId($input) { /* llave compuesta: codigo + sucursal */ }
+}
+```
+
+- Los tres métodos siguen la firma `public function X($input)` — convención uniforme del framework.
+- **Contrato de retorno:** arrays asociativos con campos `nit`, `sucursal`, `nombre`, `codBanco`, `banco`, `diasPgo`, `condPgo`, `porcDscto`. La superficie pública los re-emite tal cual dentro de `data`.
+- **Whitelist de empresa:** el controlador HTTP debe validar el valor de `empresa` **antes** de invocar al repo, no confiarlo al repositorio (defensa en profundidad — ver [12 §API v1](./12-seguridad.md)).
 
 ---
 

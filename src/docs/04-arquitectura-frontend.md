@@ -53,8 +53,9 @@ Fuente: `frontend/package.json`.
 | **lucide-react** `^0.544.0`                                                   | Íconos SVG (uso mayoritario)    |
 | **react-icons** `^5.5.0`                                                      | Colección alternativa de íconos |
 | **@fortawesome/react-fontawesome** `^3.0.2` + `free-solid-svg-icons` `^7.0.1` | FontAwesome (uso puntual)       |
-| **framer-motion** `^12.23.22`                                                 | Animaciones declarativas        |
+| **framer-motion** `^12.23.22`                                                 | Animaciones declarativas — usada intensivamente en `LeftPanel` del módulo Auth |
 | **react-transition-group** `^4.4.5`                                           | Transiciones CSS legacy         |
+| **darkreader** `^4.9.x` (v1.x)                                                | Modo oscuro dinámico — aplica el algoritmo al DOM sin refactor CSS |
 
 ### 2.3 Documentos y exportación
 
@@ -79,10 +80,11 @@ Fuente: `frontend/package.json`.
 
 ### 2.5 Notas del stack
 
-- **Sin TypeScript.** El proyecto usa JSX + JS con `@types/react` como devDep para el editor.
+- **TypeScript introducido incrementalmente (v1.x, 2026-07-17).** El proyecto sigue siendo JSX/JS mayoritariamente, pero hooks nuevos se están escribiendo en TypeScript. El primer ejemplo público es `hooks/useDarkMode.ts` para el modo oscuro. La coexistencia es la política oficial (ver [22 §5.4](./22-convenciones.md)) — no hay migración masiva planeada.
 - **Sin gestor de estado global externo** (Redux/Zustand/Jotai). El estado se maneja con **React Context + hooks**.
 - **Sin libería de formularios** tipo React Hook Form. Los formularios usan `useState` + validación manual.
 - **Múltiples librerías para el mismo problema** (íconos ×3, barcode ×4, PDF client-side ×3). Se documenta en 26.
+- **Modo oscuro con DarkReader** — activable por toggle en la topbar. Preferencia persistente en `localStorage`. Ver §12.1.
 
 ---
 
@@ -480,6 +482,49 @@ components/Contabilidad/Recaudos/
 
 Este patrón se está aplicando gradualmente a los módulos restantes.
 
+### 11.1 Ejemplo canónico · módulo `Auth` (refactorizado en v1.2, 2026-07-24)
+
+Con la introducción del Silent SSO ([10 §4.5](./10-autenticacion.md)), el módulo `Auth` (antes un `Login.jsx` monolítico de ~400 líneas) fue **descompuesto en 7 componentes + 2 hooks + 1 utilitario** siguiendo estrictamente el principio de responsabilidad única. Es el mejor ejemplo actual del patrón thin orchestrator en el proyecto.
+
+```
+components/Auth/
+├── Login.jsx                          ← orquestador (contenedor principal)
+├── hooks/
+│   ├── useMicrosoftAuth.js            ← OAuth code exchange · silent SSO · circuit breaker
+│   └── useLoginForm.js                ← estado del form + recuperación de contraseña
+├── components/
+│   ├── LeftPanel.jsx                  ← branding + luces ambientales (Framer Motion)
+│   ├── LoginForm.jsx                  ← form presentacional de credenciales locales
+│   ├── ForgotPasswordForm.jsx         ← form presentacional de recuperación
+│   ├── MicrosoftLoginButton.jsx       ← botón SSO presentacional
+│   └── LoginFooter.jsx                ← pie con datos de contacto
+└── utils/
+    └── microsoftAuth.js               ← buildMicrosoftAuthUrl helper
+```
+
+**Responsabilidades por pieza:**
+
+| Pieza                    | Responsabilidad única                                              | Sabe de… |
+|--------------------------|--------------------------------------------------------------------|----------|
+| `Login.jsx`              | Componer los paneles, coordinar estados, decidir qué form mostrar  | Ambos hooks, todos los componentes visuales |
+| `useMicrosoftAuth`       | Todo lo relativo a OAuth: silent SSO, code exchange, errores, circuit breaker con `sessionStorage` | `microsoftAuth.js`, `apiService.loginMicrosoft` |
+| `useLoginForm`           | Estado del form tradicional (login/password), toggle a olvido de contraseña, submit | `apiService.login`, `apiService.forgotPassword` |
+| `LeftPanel`              | Branding visual — logo, luces ambientales con `framer-motion`      | Solo librerías de animación |
+| `LoginForm`              | Renderizar dos inputs + botón "Iniciar sesión"                     | Props (no estado propio) |
+| `ForgotPasswordForm`     | Renderizar input de correo + botón "Recuperar"                     | Props (no estado propio) |
+| `MicrosoftLoginButton`   | Botón con logo Microsoft y `onClick`                               | Props |
+| `LoginFooter`            | HTML con datos de contacto (email, teléfono)                       | Nada |
+| `microsoftAuth.js`       | `buildMicrosoftAuthUrl({ prompt, redirectUri })` — helper puro     | `import.meta.env` |
+
+**Principios que se hacen explícitos con este ejemplo:**
+
+- **Un componente = una razón para cambiar.** Cambiar la copia del pie no toca el form. Cambiar el flujo OAuth no toca el logo.
+- **Hooks encapsulan efectos secundarios.** Los componentes visuales son puros (props → JSX).
+- **Utilitarios son testables.** `buildMicrosoftAuthUrl` es una función pura sin dependencias — se puede unit-testear sin mocks.
+- **`Login.jsx` tiene < 80 líneas.** Solo compone y coordina.
+
+Este patrón es la referencia recomendada para futuros refactors (Recaudos, LibroAuxiliar, etc. ya lo siguen; el resto se irá alineando).
+
 ---
 
 ## 12 · Sistema de diseño ("Apple-inspired")
@@ -496,6 +541,60 @@ Del contexto del proyecto y de estilos observados, el aplicativo sigue una conve
 | Loading                   | `<LoadingScreen isVisible title subtitle variant="fullscreen" />` global |
 
 `components/UI/` centraliza los primitivos reutilizables (LoadingScreen, NotificationContainer, botones, modales, etc.).
+
+### 12.1 Modo oscuro (v1.x, 2026-07-17)
+
+Implementado con **DarkReader** (ver [13 §3.3bis](./13-dependencias.md)). La arquitectura es minimalista:
+
+```
+frontend/src/
+├── hooks/
+│   └── useDarkMode.ts                 ← primer hook TypeScript del proyecto
+└── components/UI/
+    └── DarkModeToggle.jsx             ← toggle visible en topbar
+```
+
+**`useDarkMode.ts`** — responsabilidades:
+
+1. Al montar, lee `localStorage.getItem('dark_mode')` y aplica `enable(...)` de DarkReader si estaba activo.
+2. Expone `isDark` y `toggle()` al componente que lo consume.
+3. Persiste cada cambio en `localStorage`.
+
+**`DarkModeToggle.jsx`** — botón visual en la topbar (junto al avatar de usuario, típicamente) que llama `toggle()`. Ícono sol/luna alternativo de `lucide-react`.
+
+**Comportamiento observable:**
+
+- El modo se aplica **globalmente** — cualquier ruta del aplicativo hereda el modo activo.
+- El primer render puede tener un **flash blanco de ~50ms** antes de que DarkReader se aplique — aceptado como trade-off por simplicidad.
+- Ciertos módulos (Publicidad — canvas SVG) están **excluidos** vía la lista de DarkReader para preservar fidelidad de la etiqueta impresa.
+
+**Por qué TypeScript aquí y no en el resto.** El hook usa la API tipada de DarkReader (que sí publica sus tipos). Escribirlo en TypeScript aporta autocompletado real. Es una **decisión selectiva**, no una migración total — ver [22 §5.4](./22-convenciones.md) para la política.
+
+### 12.2 Dashboard con bloque de utilidades (v1.x, 2026-07-17)
+
+El dashboard principal (ruta `/inicio`) incluye desde v1.x un nuevo **bloque de "Utilidades" / accesos directos** al final de la vista. Muestra tarjetas configurables por el administrador, filtradas por área del usuario.
+
+**Componente responsable:** `components/Dashboard/UtilidadesGrid.jsx` (aprox., verificar ubicación exacta). Consume:
+
+- **Endpoint:** `/api/dashboard/utilidades/get_utilidades.php` — devuelve la lista filtrada por área del usuario en sesión.
+- **Tabla:** `dashboard_utilidades` — ver [14 §5](./14-base-de-datos.md) para el esquema.
+
+**Lógica de visibilidad** (aplicada server-side, nunca en frontend):
+
+```sql
+SELECT * FROM dashboard_utilidades
+WHERE estado = 1
+  AND (
+    areas_permitidas IS NULL
+    OR JSON_LENGTH(areas_permitidas) = 0
+    OR JSON_CONTAINS(areas_permitidas, JSON_QUOTE(:id_area))
+  )
+ORDER BY orden ASC;
+```
+
+Es decir: **visibilidad global** cuando `areas_permitidas` está vacío/null, o filtrada por membership del `id_area` del usuario en el JSON. La regla de filtrado aplica **solo** por área — el modelo no involucra `cargo` ni permisos granulares.
+
+**Administración:** las utilidades se gestionan desde AdminPanel (submódulo dedicado — ver [23 · admin-panel §Utilidades](./modulos/admin-panel.md)). Un administrador define título, descripción, `url_destino` (interna o externa), ícono, orden y áreas con acceso.
 
 ---
 

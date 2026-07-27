@@ -221,8 +221,11 @@ export const UtilidadesConfigModal = ({
             <div className={styles.formGroupApple}>
               {/* Label flotante superior izquierdo */}
               <label className={styles.floatingLabelNotch}>
-                <FontAwesomeIcon icon={faGlobe} /> Áreas Permitidas (Sin
-                selección = Visible para todos)
+                <FontAwesomeIcon icon={faGlobe} /> Áreas Permitidas
+                <span className={styles.labelSubtext}>
+                  {" "}
+                  (Sin selección = Visible para todos)
+                </span>
               </label>
 
               {/* Botón flotante de acción superior derecho */}

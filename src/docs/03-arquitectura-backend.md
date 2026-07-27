@@ -167,6 +167,100 @@ api/system/status/endpoint.php
 
 **Convivencia:** los dos patrones coexisten hoy. En 25 (Refactorización) se recomendará una guía de cuándo usar cada uno.
 
+### 5.3 Patrón C · Superficies API v1 con núcleo compartido — **añadido en 2026-07-17**
+
+Introducido como parte de la evolución hacia una arquitectura formal. Dos superficies (`api/v1/public` y `api/v1/private`) comparten un **núcleo reutilizable** de tres piezas:
+
+```
+api/v1/
+├── core/                                 ← núcleo compartido
+│   ├── bootstrap.php                     ← resolución absoluta de rutas con APP_ROOT
+│   ├── Response.php                      ← envelope estándar + X-Request-ID
+│   └── Controller.php                    ← clase base + validación de método/permisos/scopes
+│
+├── public/                               ← consumo externo
+│   ├── .htaccess                         ← CORS abierto + headers de seguridad
+│   ├── index.php                         ← router basado en tabla enriquecida
+│   ├── auth/apikey.php                   ← validación X-API-KEY + rate limit
+│   └── controllers/
+│       └── ProveedoresController.php
+│
+└── private/                              ← consumo interno (SPA)
+    ├── .htaccess                         ← CORS mismo origen + SAMEORIGIN
+    ├── index.php                         ← router basado en tabla enriquecida
+    └── controllers/
+        └── ProveedoresController.php
+```
+
+**Comparación de las tres formas:**
+
+| Aspecto            | Patrón A (legacy)     | Patrón B (endpoint.php) | Patrón C (v1)                     |
+| ------------------ | --------------------- | ----------------------- | --------------------------------- |
+| Un archivo por…    | Operación             | Dominio                 | Recurso (con router centralizado) |
+| Router             | Filesystem (URL=file) | Switch/case interno     | Tabla enriquecida                 |
+| Envelope respuesta | `{success, data}`     | `{success, data}`       | `{success, meta, data\|error}`    |
+| Autenticación      | Middleware inline     | Middleware inline       | En clase base `Controller`        |
+| Correlation ID     | ❌                    | ❌                      | `X-Request-ID` propagado          |
+| Rate limiting      | ❌                    | ❌                      | ✅ (30/min en pública)            |
+| Uso                | Legacy (~90% hoy)     | Módulos consolidados    | Consumo externo + APIs modernas   |
+
+**Cuándo usar cada uno** (política sugerida — ver [25 · Refactorización](./25-refactorizacion.md)):
+
+- **Nuevo endpoint interno CRUD simple:** Patrón A o B según cohesión.
+- **Nueva API para consumo externo:** Patrón C — superficie pública.
+- **Refactor de un dominio complejo:** migrar a Patrón C — superficie privada.
+
+**Núcleo — `bootstrap.php`:**
+
+```php
+// Resuelve rutas absolutas para evitar los ../ contados a mano (bug fix v1.x)
+define('APP_ROOT', dirname(__DIR__, 2));
+require_once APP_ROOT . '/api/services/LanClient.php';
+require_once APP_ROOT . '/api/utils/logger.php';
+// ...
+```
+
+**Núcleo — `Response.php` (envelope):**
+
+```php
+class Response {
+    private static function envelope(bool $ok, array $extras): array {
+        $requestId = 'req_' . bin2hex(random_bytes(6));
+        header("X-Request-ID: $requestId");
+        return array_merge([
+            'success' => $ok,
+            'meta' => [
+                'request_id' => $requestId,
+                'timestamp'  => gmdate('c'),
+            ],
+        ], $extras);
+    }
+    public static function ok($data)   { echo json_encode(self::envelope(true,  ['data' => $data])); }
+    public static function error(int $http, string $code, string $msg) {
+        http_response_code($http);
+        echo json_encode(self::envelope(false, ['error' => ['code' => $code, 'message' => $msg]]));
+    }
+}
+```
+
+**Núcleo — `Controller.php` (clase base):**
+
+- Valida método HTTP contra los declarados en la tabla del router.
+- Comprueba el scope (superficie pública) o el permiso rol×cargo (superficie privada) **antes** de invocar al handler.
+- Captura excepciones no controladas y las convierte en `error.code: internal_error` sin filtrar detalles al cliente — pero sí las loguea con `request_id` para trazabilidad.
+
+**Router enriquecido:** la tabla ya no es `[Clase, método]` como en el framework LAN, sino:
+
+```php
+// Público:
+'GET /proveedores' => ['ProveedoresController', 'listar', 'comercial', ['GET'], 'comercial.proveedores'],
+
+// Privado:
+'GET /proveedores' => ['ProveedoresController', 'listar', 'comercial', ['GET'], '/comercial/proveedores', 'ver'],
+```
+
+Los últimos campos difieren: **scope** (pública) vs **ruta+acción de permiso** (privada). Todo lo demás es idéntico.
+
 ---
 
 ## 6 · Anatomía de un endpoint típico (Patrón A)

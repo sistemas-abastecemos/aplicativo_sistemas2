@@ -52,15 +52,16 @@ Prefijo `/configuracion/`:
 | `/configuracion/proveedores`           | `AdminPanel/Proveedores`      |
 | `/configuracion/actualizar_inventario` | `AdminPanel/Inventario`       |
 | `/configuracion/informes`              | `AdminPanel/Informes`         |
+| `/configuracion/utilidades` **(v1.x)** | `AdminPanel/Utilidades`       |
 | `/perfil`                              | `Perfil` (separado del panel) |
 
 ---
 
 ## 4 · Componentes React
 
-`frontend/src/components/AdminPanel/` con 8 subcarpetas — una por sub-módulo:
+`frontend/src/components/AdminPanel/` con **9 subcarpetas** — una por sub-módulo (era 8 hasta v1.x; se sumó `Utilidades`):
 
-- `Areas/` · `Cargos/` · `Informes/` · `Inventario/` · `Menus/` · `Proveedores/` · `Sedes/` · `Usuarios/`
+- `Areas/` · `Cargos/` · `Informes/` · `Inventario/` · `Menus/` · `Proveedores/` · `Sedes/` · `Usuarios/` · **`Utilidades/`**
 
 Cada sub-módulo sigue el patrón thin orchestrator (ver [04 §11](../04-arquitectura-frontend.md)):
 
@@ -73,6 +74,30 @@ AdminPanel/Usuarios/
 ```
 
 `Menus/` es el más complejo — incluye drag-and-drop para reordenar y matriz de permisos por rol × cargo.
+
+### 4.1 Sub-módulo `Utilidades` (nuevo en v1.x, 2026-07-17)
+
+Gestión de los accesos directos que aparecen en el bloque "Utilidades" del dashboard principal (ver [04 §12.2](../04-arquitectura-frontend.md)).
+
+Estructura estimada:
+
+```
+AdminPanel/Utilidades/
+├── Utilidades.jsx                     ← lista de utilidades + botón "Nueva"
+├── UtilidadFormTab.jsx                ← modal de creación/edición
+├── hooks/
+│   └── useUtilidadForm.js             ← estado del form (titulo, url_destino, url_icono, orden, áreas)
+└── components/
+    ├── UtilidadRow.jsx                ← fila de la lista con acciones
+    └── AreasSelector.jsx              ← multi-select de áreas permitidas
+```
+
+**Funcionalidades:**
+
+- **CRUD** completo (crear, editar, activar/desactivar).
+- **Selector de áreas** con multi-select. Si no se selecciona ninguna, se guarda `NULL` (visibilidad global).
+- **Reordenamiento** por drag-and-drop o campo numérico manual.
+- **Preview del ícono** al escribir la URL o nombre de ícono lucide.
 
 ---
 
@@ -90,6 +115,7 @@ Ver [09 §4-§7](../09-api-endpoints.md) para detalle completo. Resumen:
 | **Proveedores**           | `POST /api/proveedores/create_proveedor.php`, `get_proveedores.php`, `update_proveedor.php`                        |
 | **Menús**                 | `POST /api/menu/get_menu_user.php`, `get_menus.php`, `create_menu.php`, `update_menu.php`, `update_bulk_order.php` |
 | **Informes**              | `POST /api/informes/get_informes.php`, `create_informe.php`, `update_informe.php`, `update_bulk_order.php`         |
+| **Utilidades** **(v1.x)** | `POST /api/dashboard/utilidades/get_utilidades.php`, `create_utilidad.php`, `update_utilidad.php`, `update_bulk_order.php` |
 | **Actualizar Inventario** | `POST /api/subida_archivos/actualiza_inventarios/update_inventario.php`                                            |
 | **Perfil**                | `POST /api/perfil/get_usuario.php`, `update_user.php`                                                              |
 

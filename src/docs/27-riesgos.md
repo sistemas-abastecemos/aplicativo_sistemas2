@@ -195,9 +195,11 @@ Cada riesgo se evalúa en la matriz clásica **probabilidad × impacto**:
 
 **Probabilidad:** Media (aplicativo expuesto a Internet).
 **Impacto:** Alto (acceso al aplicativo).
-**Nivel:** 🔴 Crítico.
+**Nivel:** 🟠 **Prioritario (era 🔴 Crítico — bajado tras v1.x)**.
 
-**Mitigación propuesta:** [25 · P1.2](./25-refactorizacion.md) — 1 hora de trabajo.
+**🟡 Estado actualizado (v1.x, 2026-07-17):** el patrón `RateLimit` **ya está aplicado en la superficie `api/v1/public`** con 30 req/min por API key. Falta portarlo a `login.php` y `login_microsoft.php` del backend legacy. El riesgo persiste en la superficie legacy — donde sigue siendo el punto de entrada del 99% del tráfico.
+
+**Mitigación propuesta:** [25 · P1.2](./25-refactorizacion.md) — 1 hora de trabajo. Copiar el patrón ya en producción a los dos endpoints legacy.
 
 ### 5.3 R-S03 · XSS en el frontend + token en localStorage
 
@@ -269,9 +271,11 @@ Cada riesgo se evalúa en la matriz clásica **probabilidad × impacto**:
 
 **Probabilidad:** Media.
 **Impacto:** Alto.
-**Nivel:** 🟠 Prioritario.
+**Nivel:** 🟡 **Atención (era 🟠 Prioritario — bajado tras v1.x parcial)**.
 
-**Mitigación propuesta:** [25 · P1.3](./25-refactorizacion.md).
+**🟡 Estado actualizado (v1.x, 2026-07-17):** las superficies `api/v1/public` y `api/v1/private` **ya declaran** headers de seguridad (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, sin `X-Powered-By`). **Falta CSP completa** en cualquier superficie y falta portar los headers al `.htaccess` legacy.
+
+**Mitigación propuesta:** [25 · P1.3](./25-refactorizacion.md). Copiar los headers ya en producción al backend legacy + añadir CSP.
 
 ### 5.10 R-S10 · Modo TLS de Cloudflare no confirmado
 
@@ -428,12 +432,13 @@ Cada riesgo se evalúa en la matriz clásica **probabilidad × impacto**:
 
 ## 8 · Mapa de calor consolidado
 
+Actualizado tras v1.x (17 jul 2026) — R-S02 y R-S09 movidos por mitigación parcial.
+
 ```mermaid
 flowchart TB
     subgraph CRITICO["🔴 CRÍTICOS — plan inmediato"]
         C1[R-A04 · sin staging]
         C2[R-S01 · creds hardcoded]
-        C3[R-S02 · sin rate limit login]
         C4[R-S04 · secrets en bundle]
         C5[R-N01 · conocimiento tácito único desarrollador]
     end
@@ -447,7 +452,6 @@ flowchart TB
         P7[R-S05 · enumeración usuarios]
         P8[R-S06 · client secret expira]
         P9[R-S08 · API_SECRET sin rotación]
-        P10[R-S09 · falta CSP]
         P11[R-E01 · sys_logs crece]
         P12[R-E03 · reportes bloquean LAN]
         P13[R-E05 · cuotas hosting]
@@ -455,6 +459,7 @@ flowchart TB
         P15[R-N03 · cambios DIAN]
         P16[R-N04 · Ley 1581]
         P17[R-N06 · deuda técnica]
+        NEW_S02[R-S02 · rate limit login legacy 🟡 v1.x]
     end
     subgraph ATENCION["🟡 ATENCIÓN — plan a mediano plazo"]
         A1[R-A02 · sesión única]
@@ -466,6 +471,7 @@ flowchart TB
         A7[R-S10 · TLS Cloudflare]
         A8[R-E02 · bundle inflado]
         A9[R-N05 · sin NDA contratistas]
+        NEW_S09[R-S09 · CSP falta legacy 🟡 v1.x]
     end
     subgraph ACEPTABLE["🟢 ACEPTABLES — monitorear"]
         OK1[R-E04 · sin caché permisos]
@@ -473,17 +479,17 @@ flowchart TB
     end
 ```
 
-**Distribución:** **5 críticos**, **17 prioritarios**, **9 en atención**, **2 aceptables**.
+**Distribución:** **4 críticos**, **17 prioritarios**, **10 en atención**, **2 aceptables** *(era 5 críticos, 17 prioritarios, 9 en atención antes de v1.x — R-S02 bajó de crítico a prioritario, R-S09 bajó de prioritario a atención)*.
 
 ---
 
 ## 9 · Estrategia de mitigación priorizada
 
-### 9.1 Trimestre 1 (los 5 críticos)
+### 9.1 Trimestre 1 (los 4 críticos + R-S02 parcial)
 
 - **R-A04** — plan de staging (aunque sea mínimo, un subdominio con su BD).
 - **R-S01** — migrar credenciales a `.env` (2 días).
-- **R-S02** — rate limit login (1 hora).
+- **R-S02** — 🟡 parcialmente cubierto en superficie v1. Portar `RateLimit` a `login.php` y `login_microsoft.php` (1 hora). Sigue en la lista de "primer trimestre" hasta cerrarse completamente en el backend legacy.
 - **R-S04** — repensar `VITE_LECTOR_PASSWORD` y `VITE_TOKEN_AGENT_PRINTER`.
 - **R-N01** — completar esta documentación + pair con un segundo desarrollador.
 

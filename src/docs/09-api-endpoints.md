@@ -23,7 +23,7 @@
 
 ## 1 · Objetivo
 
-Catalogar **todos los endpoints** expuestos por el sistema: 100+ endpoints del backend cPanel + 30 acciones del framework LAN. Se documentan por dominio, con método HTTP, ruta, propósito, parámetros esperados, respuesta típica y códigos de error específicos.
+Catalogar **todos los endpoints** expuestos por el sistema: ~110 endpoints del backend cPanel legacy + 3 endpoints en la superficie `api/v1/public` + 2 endpoints en la superficie `api/v1/private` + 33 acciones del framework LAN (30 originales + 3 añadidas en v1.x: `general/listar_proveedores`, `general/buscar_proveedores_biable`, `general/buscar_proveedor_id`). Se documentan por dominio, con método HTTP, ruta, propósito, parámetros esperados, respuesta típica y códigos de error específicos.
 
 Este documento es una **referencia de consulta**, no un tutorial. Está pensado para copiar-pegar rápidamente al implementar un nuevo cliente o al depurar una integración.
 
@@ -108,10 +108,132 @@ En las tablas de este documento se usa la siguiente notación en la columna **Au
 - `Bearer + Permiso` — Requiere sesión + permiso granular por `check_permission.php`. Se indica la ruta+acción cuando aplica.
 - `Bearer + Rol` — Requiere sesión + rol específico por `check_role.php` (endpoints legacy).
 - `M2M` — Requiere autenticación máquina-a-máquina (solo framework LAN).
+- `X-API-KEY + Scope` — **(v1.x)** Requiere header `X-API-KEY` cuyo hash SHA-256 coincida con un registro en `api_keys` activo, con el scope apropiado. Aplica exclusivamente a la superficie `api/v1/public`.
+
+### 2.7 Envelope estándar de las superficies v1
+
+Introducido en v1.x (2026-07-17) para las superficies `api/v1/public` y `api/v1/private`. Toda respuesta de estas superficies sigue este formato uniforme:
+
+**Éxito:**
+
+```json
+{
+  "success": true,
+  "meta": {
+    "request_id": "req_abc123def456",
+    "timestamp": "2026-07-17T14:38:12Z"
+  },
+  "data": { ... }
+}
+```
+
+**Error:**
+
+```json
+{
+  "success": false,
+  "meta": {
+    "request_id": "req_abc123def456",
+    "timestamp": "2026-07-17T14:38:12Z"
+  },
+  "error": {
+    "code": "unauthorized",
+    "message": "API key inválida o inactiva"
+  }
+}
+```
+
+**El header `X-Request-ID` se propaga** en la respuesta HTTP y también aparece en `meta.request_id`. Es la clave para correlacionar logs remotos con incidentes reportados por el consumidor.
+
+Los endpoints legacy (`/api/…` sin prefijo `v1`) **conservan su formato original** (`{success, message, data}`) — no se rompió compatibilidad.
 
 ---
 
-## 3 · Endpoints raíz — autenticación
+## 3 · Superficies API v1 — introducidas en 2026-07-17
+
+Dos nuevas superficies coexisten con el catálogo legacy documentado en las secciones siguientes:
+
+- **`api/v1/public`** — **de solo lectura**, consumo externo (front-ends terceros, servidores, scripts, Postman). Autenticación por `X-API-KEY` + scope. Rate limit **30 peticiones por minuto por aplicación**. CORS abierto (`*`) — la seguridad recae en la key + rate limit + HTTPS.
+- **`api/v1/private`** — **consumo interno exclusivo** de la propia app SEAO. Reutiliza el sistema de sesión (`auth.php`) + permisos granulares (`check_permission.php` vía `requirePermiso`). No usa API keys. CORS restringido a mismo origen (`X-Frame-Options: SAMEORIGIN`).
+
+Ambas superficies comparten núcleo (`bootstrap.php`, `Response.php`, `Controller.php`) y el envelope estándar (§2.7). Documentado en [03 §API v1](./03-arquitectura-backend.md).
+
+### 3.1 · `api/v1/public` — endpoints
+
+| Método | Ruta | Auth | Scope | Propósito |
+|---|---|---|---|---|
+| `GET` | `/api/v1/public/proveedores` | `X-API-KEY` | `comercial.proveedores` | Listado paginado de proveedores. Delegado al framework LAN vía `LanClient` (acción `general/listar_proveedores`) |
+
+**Contrato de respuesta simplificado** (para consumidores externos que no necesitan todos los campos del ERP):
+
+```json
+{
+  "success": true,
+  "meta": { "request_id": "...", "timestamp": "...", "empresa": "abastecemos" },
+  "data": [
+    {
+      "nit": "890305234-1",
+      "sucursal": "001",
+      "nombre": "Proveedor Demo S.A.S.",
+      "codBanco": "007",
+      "banco": "Bancolombia",
+      "diasPgo": 30,
+      "condPgo": "CO",
+      "porcDscto": 2.5
+    }
+  ]
+}
+```
+
+**Parámetros de query soportados:**
+
+- `empresa` — `abastecemos` (default) o `tobar`. **Whitelist estricto** — cualquier otro valor devuelve `400`.
+- `q` — texto de búsqueda por código/NIT o descripción (delega en `general/buscar_proveedores_biable`).
+- `id` — combinación de código + sucursal para buscar un proveedor puntual (delega en `general/buscar_proveedor_id`).
+
+### 3.2 · `api/v1/private` — endpoints
+
+| Método | Ruta | Auth | Permiso | Propósito |
+|---|---|---|---|---|
+| `GET` | `/api/v1/private/proveedores` | `Bearer` | `/comercial/proveedores · ver` | Idem que el público pero para uso interno del SPA |
+| `GET` | `/api/v1/private/proveedores/buscar?q=...` | `Bearer` | `/comercial/proveedores · ver` | Búsqueda por término |
+
+Comparten repositorio con la superficie pública (`ProveedoresRepo` del core LAN — ver [05 §12](./05-framework-interno.md)) pero pasan por autorización granular en vez de scope de API key.
+
+### 3.3 · Router enriquecido
+
+Ambas superficies usan un router basado en tabla enriquecida:
+
+**Público:**
+
+```php
+[Controlador, método, módulo, métodos_http, scope]
+```
+
+**Privado:**
+
+```php
+[Controlador, método, módulo, métodos_http, moduloRutaPermiso, accionPermiso]
+```
+
+Validación temprana de método HTTP y de existencia del handler **antes** de instanciar el controlador (patrón de router-check-early).
+
+### 3.4 · Códigos de error específicos de las superficies v1
+
+| Código | `error.code` | Cuándo |
+|---|---|---|
+| `401` | `unauthorized` | X-API-KEY ausente, inválida o inactiva |
+| `403` | `forbidden_scope` | La API key existe pero no tiene el scope requerido |
+| `403` | `forbidden_ip` | La IP del cliente no está en `ips_permitidas` |
+| `429` | `rate_limited` | Excedió 30 req/min |
+| `400` | `invalid_parameter` | ej. `empresa` fuera del whitelist |
+| `500` | `internal_error` | Excepción no controlada — detalles nunca se filtran, solo `request_id` |
+
+**Los detalles de la excepción PHP nunca aparecen en el cuerpo HTTP.** `display_errors` está desactivado. Cada error queda registrado en `RemoteLogger` correlacionado con su `request_id`.
+
+---
+
+## 4 · Endpoints raíz — autenticación
 
 Los cinco endpoints en la raíz del backend cPanel gestionan el ciclo de vida de la sesión. Cubiertos en profundidad en [10 · Autenticación](./10-autenticacion.md).
 
@@ -153,7 +275,7 @@ Content-Type: application/json
 
 ---
 
-## 4 · Administración — usuarios, roles, áreas, cargos, sedes, proveedores
+## 5 · Administración — usuarios, roles, áreas, cargos, sedes, proveedores
 
 Todos siguen el patrón **CRUD "un archivo por operación"** (Patrón A del documento 03 §5.1).
 
@@ -196,7 +318,7 @@ CRUD sobre `cmproveedores` (mirror del ERP en MySQL). Sobre ruta `/configuracion
 
 ---
 
-## 5 · Menús (`/api/menu/`)
+## 6 · Menús (`/api/menu/`)
 
 Núcleo del control de acceso frontend (ver [11 · Autorización](./11-autorizacion.md)).
 
@@ -242,7 +364,7 @@ Ver [11 · Autorización §8.1](./11-autorizacion.md). Estructura recursiva:
 
 ---
 
-## 6 · Perfil del usuario (`/api/perfil/`)
+## 7 · Perfil del usuario (`/api/perfil/`)
 
 | Método | Ruta | Auth | Propósito |
 |---|---|---|---|
@@ -251,7 +373,7 @@ Ver [11 · Autorización §8.1](./11-autorizacion.md). Estructura recursiva:
 
 ---
 
-## 7 · Informes (`/api/informes/`)
+## 8 · Informes (`/api/informes/`)
 
 Gestión de los "dashboards embebidos" (BI externos vía URL — ver [14 · BD §5](./14-base-de-datos.md)).
 
@@ -264,7 +386,7 @@ Gestión de los "dashboards embebidos" (BI externos vía URL — ver [14 · BD �
 
 ---
 
-## 8 · Fruver (`/api/fruver/`)
+## 9 · Fruver (`/api/fruver/`)
 
 ### 8.1 Items (`/api/fruver/items/`)
 
@@ -282,7 +404,7 @@ Gestión de los "dashboards embebidos" (BI externos vía URL — ver [14 · BD �
 
 ---
 
-## 9 · Carnes (`/api/carnes/pedidos/`)
+## 10 · Carnes (`/api/carnes/pedidos/`)
 
 Pedidos con patrón cabecera-detalle (`pedidos_carnes` + `detalles_pedido_carnes`).
 
@@ -295,7 +417,7 @@ Pedidos con patrón cabecera-detalle (`pedidos_carnes` + `detalles_pedido_carnes
 
 ---
 
-## 10 · Compras (`/api/compras/`)
+## 11 · Compras (`/api/compras/`)
 
 Es la carpeta con más endpoints (20). Se subdivide en cuatro sub-dominios.
 
@@ -349,7 +471,7 @@ Un solo endpoint consolidado (Patrón B del documento 03 §5.2):
 
 ---
 
-## 11 · Contabilidad (`/api/contabilidad/`)
+## 12 · Contabilidad (`/api/contabilidad/`)
 
 Todos los endpoints funcionales usan Patrón B (consolidado) y llaman al framework LAN. Sub-acción interna despachada por payload.
 
@@ -364,7 +486,7 @@ Todos los endpoints funcionales usan Patrón B (consolidado) y llaman al framewo
 
 ---
 
-## 12 · Formularios (`/api/formularios/`)
+## 13 · Formularios (`/api/formularios/`)
 
 Endpoints "cara al usuario" para las solicitudes. Complementan los administrativos de `/compras/`.
 
@@ -396,7 +518,7 @@ Endpoints "cara al usuario" para las solicitudes. Complementan los administrativ
 
 ---
 
-## 13 · Inventario y subida de archivos
+## 14 · Inventario y subida de archivos
 
 | Método | Ruta | Propósito |
 |---|---|---|
@@ -404,7 +526,7 @@ Endpoints "cara al usuario" para las solicitudes. Complementan los administrativ
 
 ---
 
-## 14 · Contabilidad DIAN — sub-acciones detalladas
+## 15 · Contabilidad DIAN — sub-acciones detalladas
 
 El endpoint `/api/contabilidad/dian/endpoint.php` merece detalle porque expone múltiples operaciones.
 
@@ -423,7 +545,7 @@ El endpoint despacha internamente por un campo `accion` en el body:
 
 ---
 
-## 15 · Publicidad (`/api/publicidad/printer/`)
+## 16 · Publicidad (`/api/publicidad/printer/`)
 
 | Método | Ruta | Auth | Propósito |
 |---|---|---|---|
@@ -440,7 +562,7 @@ Sub-acciones observadas por parámetro `accion`:
 
 ---
 
-## 16 · Seguridad — visitantes (`/api/seguridad/visitantes/`)
+## 17 · Seguridad — visitantes (`/api/seguridad/visitantes/`)
 
 Ciclo completo de visitantes.
 
@@ -459,7 +581,7 @@ Ciclo completo de visitantes.
 
 ---
 
-## 17 · Sistemas — CVM y logs
+## 18 · Sistemas — CVM y logs
 
 ### 17.1 CVM (`/api/sistemas/cvm/`)
 
@@ -491,7 +613,7 @@ Ciclo completo de visitantes.
 
 ---
 
-## 18 · Lector de precios (`/api/lector_precios/`)
+## 19 · Lector de precios (`/api/lector_precios/`)
 
 **Único bloque de endpoints sin Bearer** — se accede desde quioscos físicos sin sesión de usuario.
 
@@ -515,7 +637,7 @@ Ciclo completo de visitantes.
 
 ---
 
-## 19 · System (`/api/system/`)
+## 20 · System (`/api/system/`)
 
 | Método | Ruta | Auth | Propósito |
 |---|---|---|---|
@@ -523,7 +645,7 @@ Ciclo completo de visitantes.
 
 ---
 
-## 20 · Framework LAN — catálogo completo de acciones
+## 21 · Framework LAN — catálogo completo de acciones
 
 Ver detalle en [05 · Framework Interno §11](./05-framework-interno.md). Reproducido aquí como referencia para consumidores.
 
@@ -546,6 +668,11 @@ Ver detalle en [05 · Framework Interno §11](./05-framework-interno.md). Reprod
 | `buscar_lineas` | `LineasRepo::buscar` | `{query}` |
 | `listar_bodegas` | `BodegasRepo::listar` | `{empresa?}` |
 | `buscar_bodegas` | `BodegasRepo::buscar` | `{query, empresa?}` |
+| `general/listar_proveedores` **(v1.x)** | `ProveedoresRepo::listar` | `{empresa}` — consulta la vista `proveedores` de Biable |
+| `general/buscar_proveedores_biable` **(v1.x)** | `ProveedoresRepo::buscar` | `{query, empresa}` — búsqueda por código/NIT o descripción |
+| `general/buscar_proveedor_id` **(v1.x)** | `ProveedoresRepo::buscarPorId` | `{codigo, sucursal, empresa}` — llave compuesta |
+
+Las tres nuevas acciones alimentan la superficie `api/v1/public/proveedores` (§3.1).
 
 ### 20.3 Módulo `comercial`
 
@@ -594,7 +721,7 @@ Ver detalle en [05 · Framework Interno §11](./05-framework-interno.md). Reprod
 
 ---
 
-## 21 · Códigos de error específicos por dominio
+## 22 · Códigos de error específicos por dominio
 
 Documentación consolidada de errores no genéricos que un consumidor debe manejar:
 
@@ -613,7 +740,7 @@ Documentación consolidada de errores no genéricos que un consumidor debe manej
 
 ---
 
-## 22 · Patrones de consumo desde el frontend
+## 23 · Patrones de consumo desde el frontend
 
 Todo consumo pasa por `src/services/api.js` (ver [04 · Frontend §8](./04-arquitectura-frontend.md)). La biblioteca centralizada evita al desarrollador tocar directamente `fetch`.
 
@@ -652,7 +779,7 @@ try {
 
 ---
 
-## 23 · Elementos pendientes de análisis profundo
+## 24 · Elementos pendientes de análisis profundo
 
 Endpoints/acciones que requieren lectura del código para completar 100% de detalle:
 
@@ -667,7 +794,7 @@ Estos ítems se resolverán al escribir los documentos por módulo (23).
 
 ---
 
-## 24 · Referencias cruzadas
+## 25 · Referencias cruzadas
 
 | Necesitas saber… | Documento |
 |---|---|

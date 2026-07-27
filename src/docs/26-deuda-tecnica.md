@@ -76,7 +76,7 @@ Interpretación:
 | **DT-002** | Credenciales MySQL hardcoded en 5 cronjobs `subir_checker_mysql*.php`                        | Multiplicación del problema anterior | S        | [12 §7](./12-seguridad.md)                                             |
 | **DT-003** | `VITE_LECTOR_PASSWORD` embebida en el bundle JS                                              | Cualquiera con DevTools la ve        | M        | [04 §15](./04-arquitectura-frontend.md) · [12 §6.1](./12-seguridad.md) |
 | **DT-004** | `VITE_TOKEN_AGENT_PRINTER` embebida en el bundle JS                                          | Idem                                 | M        | [04 §15](./04-arquitectura-frontend.md) · [12 §6.1](./12-seguridad.md) |
-| **DT-005** | Sin rate limiting en `/api/login.php`                                                        | Fuerza bruta lenta posible           | XS       | [12 §11.6](./12-seguridad.md)                                          |
+| **DT-005** | Sin rate limiting en `/api/login.php` legacy. **🟡 Parcialmente atendido (v1.x)**: superficie pública `api/v1/public` ya con 30 req/min. Falta aplicar a `login.php`, `login_microsoft.php` | Fuerza bruta lenta posible           | XS       | [12 §11.6](./12-seguridad.md)                                          |
 
 ### 4.2 Estructura
 
@@ -114,8 +114,8 @@ Interpretación:
 | ID         | Item                                                                        | Impacto                               | Esfuerzo |
 | ---------- | --------------------------------------------------------------------------- | ------------------------------------- | -------- |
 | **DT-013** | Token de sesión en `localStorage` (susceptible a XSS)                       | Riesgo si se introduce XSS            | M        |
-| **DT-014** | Sin CSP declarada en respuestas del backend                                 | XSS más aprovechable                  | S        |
-| **DT-015** | Sin `HSTS`, `X-Frame-Options`, `Referrer-Policy` en `.htaccess` del backend | Riesgo elevado de ataques secundarios | XS       |
+| **DT-014** | Sin CSP declarada en respuestas del backend legacy. **🟡 Parcialmente atendido (v1.x)**: superficies v1 con headers de seguridad, pero CSP completa aún no                                | XSS más aprovechable                  | S        |
+| **DT-015** | Sin `HSTS`, `X-Frame-Options`, `Referrer-Policy` en `.htaccess` del backend legacy. **🟡 Parcialmente atendido (v1.x)**: superficies v1 tienen `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, sin `X-Powered-By`. Falta HSTS y aplicar a backend legacy | Riesgo elevado de ataques secundarios | XS       |
 | **DT-016** | Enumeración de usuarios posible por respuesta diferenciada de `login.php`   | Reconocimiento previo a ataque        | XS       |
 
 ### 5.2 Estructura

@@ -1,4 +1,7 @@
-export const buildMicrosoftAuthUrl = (silent = false) => {
+export const buildMicrosoftAuthUrl = (
+  silent = false,
+  customReturnUrl = null,
+) => {
   const tenantId = import.meta.env.VITE_MICROSOFT_TENANT_ID;
   const clientId = import.meta.env.VITE_MICROSOFT_CLIENT_ID;
 
@@ -14,6 +17,12 @@ export const buildMicrosoftAuthUrl = (silent = false) => {
 
   if (silent) {
     url += "&prompt=none";
+  }
+
+  // Obtiene la ruta destino guardada por PrivateRoute o pasada por parámetro
+  const returnTarget = customReturnUrl || sessionStorage.getItem("returnUrl");
+  if (returnTarget && returnTarget !== "/login") {
+    url += `&state=${encodeURIComponent(returnTarget)}`;
   }
 
   return url;

@@ -1,5 +1,5 @@
 import React from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
 import PrivateRoute from "./components/Routing/PrivateRoute";
 import { NotificationProvider } from "./contexts/NotificationContext";
@@ -7,6 +7,7 @@ import { MenuProvider } from "./contexts/MenuContext";
 import LoadingScreen from "./components/UI/LoadingScreen";
 import NotificationContainer from "./components/UI/NotificationContainer";
 import Layout from "./components/Layout/Layout";
+import { getReturnUrl } from "./components/Auth/utils/navigation";
 
 // BASIC CONFIG//
 import Menus from "./components/AdminPanel/Menus/Menus";
@@ -71,6 +72,19 @@ import LectorPrecios5 from "./components/LectorPrecios/B5/LectorPrecios";
 import LectorPrecios8 from "./components/LectorPrecios/B8/LectorPrecios";
 import LectorPrecios11 from "./components/LectorPrecios/B11/LectorPrecios";
 
+// Componente interno para gestionar la redirección inteligente si entra logueado a /login
+const LoginRedirect = () => {
+  const location = useLocation();
+  const destinationRef = React.useRef(null);
+
+  if (!destinationRef.current) {
+    destinationRef.current = getReturnUrl(location);
+    sessionStorage.removeItem("returnUrl");
+  }
+
+  return <Navigate to={destinationRef.current} replace />;
+};
+
 function AppContent() {
   const { user, loading } = useAuth();
 
@@ -83,10 +97,7 @@ function AppContent() {
       <NotificationContainer />
       <Routes>
         {/* Login */}
-        <Route
-          path="/login"
-          element={user ? <Navigate to="/inicio" replace /> : <Login />}
-        />
+        <Route path="/login" element={user ? <LoginRedirect /> : <Login />} />
 
         {/* Rutas protegidas */}
         <Route

@@ -236,6 +236,125 @@ sequenceDiagram
 
 Cuando un empleado sale de la organización, deshabilitar su cuenta en Microsoft 365 **rompe automáticamente** su capacidad de iniciar sesión vía SSO. No hace falta tocar el aplicativo. (Sí hay que marcar `activo=0` para bloquear también el login local si tenía contraseña.)
 
+### 4.5 Silent SSO — detección de sesión corporativa activa (añadido en v1.2, 2026-07-24)
+
+Complemento del flujo estándar SSO. Detecta automáticamente si el usuario ya tiene sesión corporativa activa en Microsoft 365 al cargar la pantalla `/login`, evitándole el clic explícito en "Iniciar con Microsoft".
+
+#### 4.5.1 Diagrama de secuencia
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as Usuario
+    participant SPA as Login.jsx (contenedor)
+    participant HK as useMicrosoftAuth
+    participant IFR as iframe oculto
+    participant MS as Microsoft Entra
+    participant EP as login_microsoft.php
+    participant SS as sessionStorage
+
+    U->>SPA: navega a /login (arranque de la app)
+    SPA->>HK: monta hook
+
+    HK->>SS: lee user_logged_out
+    alt user_logged_out === "true"
+        Note over HK: Circuit breaker activo<br/>NO intentar silent
+        HK->>SS: NO limpiar todavía
+        HK-->>SPA: modo login manual (no silent)
+    else No hay flag
+        HK->>SS: lee ms_silent_login_attempted
+        alt ya intentado en esta sesión de navegador
+            HK-->>SPA: no reintentar
+        else
+            HK->>SS: SET ms_silent_login_attempted = "true"
+            HK->>HK: buildMicrosoftAuthUrl con<br/>prompt=none + redirect_uri=/silent-callback
+            HK->>IFR: crea iframe con la URL
+            IFR->>MS: authorize?prompt=none
+            alt Sesión corporativa activa
+                MS-->>IFR: redirect a /silent-callback?code=...
+                IFR->>HK: postMessage con code
+                HK->>EP: POST login_microsoft.php { code, silent: true }
+                EP-->>HK: { user, token }
+                HK->>SPA: setState autenticado
+                SPA->>U: redirect a /inicio (sin clic del usuario)
+            else Sin sesión / requiere interacción
+                MS-->>IFR: redirect con error=login_required o interaction_required
+                IFR->>HK: postMessage con error
+                HK->>HK: silenciar el error (esperado)
+                HK-->>SPA: modo login manual
+            end
+        end
+    end
+```
+
+#### 4.5.2 Elementos destacables
+
+**Parámetro `prompt=none` del OAuth 2.0.** Cuando este parámetro está presente en la URL de autorización, Microsoft Entra:
+
+- Si detecta sesión activa del usuario → responde con `code` como en el flujo normal.
+- Si **NO** detecta sesión activa → responde con error `login_required` o `interaction_required`. **No muestra interfaz de login** al usuario.
+
+Esto permite hacer el intento "invisible" dentro de un iframe. Si falla, el usuario ni se entera; ve la pantalla de login normal.
+
+**Helper `buildMicrosoftAuthUrl` centralizado.** Ubicado en `src/components/Auth/utils/microsoftAuth.js`, genera la URL con todos los parámetros correctos:
+
+```javascript
+export function buildMicrosoftAuthUrl({ prompt, redirectUri }) {
+  const params = new URLSearchParams({
+    client_id: import.meta.env.VITE_MICROSOFT_CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: redirectUri,
+    scope: 'openid profile email User.Read',
+    response_mode: 'query',
+  });
+  if (prompt) params.set('prompt', prompt); // 'none' para silent, 'select_account' para manual
+  return `https://login.microsoftonline.com/${import.meta.env.VITE_MICROSOFT_TENANT_ID}/oauth2/v2.0/authorize?${params}`;
+}
+```
+
+Se reutiliza para los dos flujos (silent y manual) — cambia solo el `prompt`.
+
+#### 4.5.3 Circuit breaker — prevención de bucles infinitos
+
+⚠ **Escenario que motivó el circuit breaker:**
+
+Sin salvaguardas, este era el bucle observado:
+
+1. Usuario hace **logout manual**.
+2. Frontend borra `authToken` de localStorage y navega a `/login`.
+3. `useMicrosoftAuth` monta y detecta sesión activa en Microsoft (el logout local no invalidó la de Entra).
+4. Silent SSO tiene éxito → usuario queda re-logueado inmediatamente.
+5. El usuario vuelve a hacer logout → paso 3 se repite indefinidamente.
+
+**Solución con dos banderas en `sessionStorage`:**
+
+| Bandera | Cuándo se establece | Cuándo se limpia | Propósito |
+|---|---|---|---|
+| `user_logged_out` | Al hacer logout manual (desde `logout()` del `AuthContext`) | Solo cuando el usuario hace clic explícito en "Iniciar con Microsoft" | Bloquear silent SSO por completo hasta acción manual |
+| `ms_silent_login_attempted` | Al primer intento de silent en la vida del tab | Al cerrar la pestaña (naturalmente) | Impedir múltiples intentos silent en el mismo tab |
+
+**Propagación de `?logout=true`.** `AuthContext` navega a `/login?logout=true` tras el logout. La query string sirve como señal auxiliar en caso de que `sessionStorage` no esté disponible (Safari en modo privado, por ejemplo). El componente `Login` lee el query param y setea `user_logged_out` en consecuencia.
+
+#### 4.5.4 Diferencia con SSO manual
+
+| Aspecto | SSO manual (§4.1) | Silent SSO (§4.5) |
+|---|---|---|
+| Trigger | Clic explícito | Automático al montar `/login` |
+| UI de Microsoft | Visible (pantalla de login o consentimiento) | Ninguna — iframe oculto |
+| `prompt` OAuth | `select_account` (default) | `none` |
+| Fallo esperado | Poco frecuente | Frecuente y silencioso |
+| Redirect final | `/login/microsoft-callback` | `/silent-callback` |
+| Bloqueado por logout | No | **Sí — hasta clic manual** |
+
+#### 4.5.5 Endpoint backend
+
+`login_microsoft.php` **no requiere cambios** para el silent SSO — el backend recibe el `code` de la misma forma. Opcionalmente el frontend envía `silent: true` en el body para que el logger discrimine el origen en `sys_logs`:
+
+```json
+POST /api/login_microsoft.php
+{ "code": "0.AXoA...", "redirect_uri": "https://.../silent-callback", "silent": true }
+```
+
 ---
 
 ## 5 · Flujo 3 · Autenticación M2M (backend ↔ framework LAN)
@@ -297,7 +416,96 @@ El log central termina con **la identidad del usuario final** aunque técnicamen
 
 ---
 
-## 6 · Validación de token en cada request (`middlewares/auth.php`)
+## 6 · Flujo 4 · Autenticación por `X-API-KEY` (superficie pública v1) — añadido en 2026-07-17
+
+### 6.1 Contexto
+
+Con la introducción de la superficie `api/v1/public` (documentada en [03 §5.3](./03-arquitectura-backend.md) y [09 §3](./09-api-endpoints.md)), el aplicativo tiene un **cuarto método de autenticación** para consumidores externos (front-ends de terceros, servidores, scripts, integraciones B2B).
+
+Este flujo **no crea sesión** ni usa cookies. Cada petición es autoautenticante mediante un header estático.
+
+### 6.2 Diagrama
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Cliente externo
+    participant EDGE as Cloudflare + WAF
+    participant API as api/v1/public
+    participant DB as MySQL
+    participant LAN as Framework LAN
+
+    C->>EDGE: GET /api/v1/public/proveedores<br/>X-API-KEY: sk_abc123...
+    EDGE->>API: proxy
+    API->>API: bootstrap.php + Response.php<br/>genera X-Request-ID
+    API->>API: apikey.php calcula<br/>hash = SHA-256(X-API-KEY)
+    API->>DB: SELECT * FROM api_keys<br/>WHERE llave_hash = :hash<br/>OR llave = :key -- fallback legacy
+    alt No existe / activa=0
+        DB-->>API: 0 filas
+        API->>API: Logger::warning<br/>(key enmascarada + IP + request_id)
+        API-->>C: 401 error.code: unauthorized
+    else Existe
+        DB-->>API: fila (scopes, ips_permitidas, ...)
+        API->>API: hash_equals(fila.llave_hash, hash)<br/>-- comparación en tiempo constante
+        opt Con IP allowlist
+            API->>API: verificar IP del cliente ∈ ips_permitidas
+            alt IP no permitida
+                API-->>C: 403 error.code: forbidden_ip
+            end
+        end
+        API->>API: verificar scope requerido ∈ fila.scopes
+        alt Scope insuficiente
+            API-->>C: 403 error.code: forbidden_scope
+        end
+        API->>API: rate limit — Counter[key] < 30/min
+        alt Rate excedido
+            API-->>C: 429 error.code: rate_limited
+        end
+        API->>DB: UPDATE api_keys SET ultimo_uso = NOW()
+        API->>LAN: LanClient::post general/listar_proveedores
+        LAN-->>API: {resultado: [...]}
+        API-->>C: 200 { success: true, meta, data: [...] }
+    end
+```
+
+### 6.3 Elementos que componen la autenticación
+
+| Componente | Rol |
+|---|---|
+| Header `X-API-KEY` | Token opaco proporcionado por Belalcázar al consumidor |
+| Tabla `api_keys` (ver [14 §5](./14-base-de-datos.md)) | Registro autoritativo de keys activas + scopes + IP allowlist |
+| **Hash SHA-256** en `api_keys.llave_hash` | Autoritativo desde v1.x. Un dump de la tabla **ya no expone llaves utilizables** |
+| **`hash_equals()`** para comparación | Evita timing attacks. Compara byte a byte en tiempo constante |
+| **Fallback a `api_keys.llave` en texto plano** | Compatibilidad temporal para migración sin downtime. Se elimina en la "fase 5" (ver [26](./26-deuda-tecnica.md)) |
+| **Rate limit** por key (30 req/min) | Aplicado antes del ruteo — evita ataque de fuerza bruta o abuso |
+| **Enmascaramiento en logs** | Solo aparecen los primeros/últimos 4 caracteres de la key en warnings (`sk_ab...cdef`), junto con `X-Request-ID` |
+
+### 6.4 Comparación con los otros flujos
+
+| Aspecto | Login local | SSO Microsoft | M2M | **X-API-KEY (v1.x)** |
+|---|---|---|---|---|
+| Autoritativo | `sesiones.token` | Idem tras exchange | `LAN_API_SECRET` env var | `api_keys.llave_hash` |
+| Vida útil | 24 h | 24 h | Sin caducidad (rotación manual) | Sin caducidad (rotación manual) |
+| Crea sesión | ✅ | ✅ | ❌ | ❌ |
+| Identifica usuario | ✅ | ✅ | ❌ (identifica app) | ❌ (identifica app) |
+| Autorización | rol×cargo | rol×cargo | IP allow-list + Bearer | **Scope** + IP allowlist |
+| Rate limit | ❌ (deuda DT-005) | ❌ (deuda DT-005) | Por IP allowlist | ✅ 30/min por key |
+
+### 6.5 Auditoría
+
+Cada intento fallido queda en `sys_logs` con:
+
+- Nivel `WARNING`.
+- Key enmascarada (nunca completa).
+- IP del cliente (de `X-Forwarded-For` o `REMOTE_ADDR`).
+- `X-Request-ID` — correlacionable con el error que el cliente recibió.
+- Motivo del fallo (`unauthorized`, `forbidden_scope`, `forbidden_ip`, `rate_limited`).
+
+Cada uso exitoso actualiza `api_keys.ultimo_uso`. Una key sin uso reciente es candidata a auditar/revocar.
+
+---
+
+## 7 · Validación de token en cada request (`middlewares/auth.php`)
 
 Todos los endpoints protegidos incluyen `middlewares/auth.php`. Su lógica:
 
@@ -337,7 +545,7 @@ Si el token es inválido/expirado, el propio middleware ya respondió `401` y el
 
 ---
 
-## 7 · Cierre de sesión (`logout.php`)
+## 8 · Cierre de sesión (`logout.php`)
 
 Simple y directo:
 
@@ -347,8 +555,11 @@ sequenceDiagram
     logout->>MySQL: DELETE FROM sesiones WHERE token = :t
     MySQL-->>logout: OK
     logout-->>SPA: 200 · { success:true, message: "Sesion cerrada correctamente" }
-    SPA->>SPA: localStorage.removeItem(authToken)<br/>redirect /login
+    SPA->>SPA: localStorage.removeItem(authToken)
+    SPA->>SPA: sessionStorage.setItem('user_logged_out', 'true')<br/>redirect /login?logout=true
 ```
+
+**Cambio en v1.2 (2026-07-24):** el logout ya no solo borra el token — también setea `user_logged_out = "true"` en `sessionStorage` y propaga `?logout=true` en la URL. Esto **desactiva el Silent SSO** hasta que el usuario haga clic manual en "Iniciar con Microsoft" (ver §4.5.3). Sin esta salvaguarda, el silent SSO detectaba la sesión aún activa en Microsoft y volvía a autenticar al usuario en un bucle.
 
 ### 7.1 Robustez del endpoint
 
@@ -356,9 +567,11 @@ sequenceDiagram
 - `DELETE` es idempotente: llamar logout dos veces no falla, la segunda simplemente no borra nada.
 - No requiere autenticación adicional — poseer el token es suficiente para desactivarlo (equivalente a "quien lo tiene puede cerrarlo").
 
+⚠ **Nota importante — logout local vs remoto:** el `logout.php` **solo** invalida la sesión en el aplicativo (MySQL local). **No** cierra la sesión de Microsoft del usuario. Para cerrar también la sesión corporativa habría que redirigir a `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/logout?post_logout_redirect_uri=...` — decisión de UX pendiente (algunos usuarios no querrán ese comportamiento porque los desloguearía de Teams, Outlook, etc.).
+
 ---
 
-## 8 · Ciclo de vida completo de una sesión
+## 9 · Ciclo de vida completo de una sesión
 
 ```mermaid
 stateDiagram-v2
@@ -387,7 +600,7 @@ stateDiagram-v2
 
 ---
 
-## 9 · Almacenamiento del token en el navegador
+## 10 · Almacenamiento del token en el navegador
 
 Ver también documento 04 §17.
 
@@ -410,7 +623,7 @@ Alternativas modernas (cookie `HttpOnly; Secure; SameSite=Strict`) se recomienda
 
 ---
 
-## 10 · `forgot_password.php` — endpoint del aplicativo de proveedores
+## 11 · `forgot_password.php` — endpoint del aplicativo de proveedores
 
 **Aclaración importante:** aunque `forgot_password.php` está en `backend/api/`, su código consulta las columnas `nit` y `email` de `usuarios` — columnas que **no existen** en la tabla `usuarios` del aplicativo interno (ver §2.1). Además usa `correo_config2.php` y el logo de `proveedor.supermercadobelalcazar.com`.
 
@@ -420,7 +633,7 @@ Alternativas modernas (cookie `HttpOnly; Secure; SameSite=Strict`) se recomienda
 
 ---
 
-## 11 · Matriz de códigos HTTP en autenticación
+## 12 · Matriz de códigos HTTP en autenticación
 
 | Escenario                                             | Código                | Endpoint                | Log     |
 | ----------------------------------------------------- | --------------------- | ----------------------- | ------- |
@@ -446,7 +659,7 @@ Alternativas modernas (cookie `HttpOnly; Secure; SameSite=Strict`) se recomienda
 
 ---
 
-## 12 · Fortalezas de la autenticación implementada
+## 13 · Fortalezas de la autenticación implementada
 
 1. **Contraseñas con `password_hash`/`password_verify`** → bcrypt con salt automático, sin uso de `md5`/`sha1` para el aplicativo interno.
 2. **Tokens con `random_bytes(32)`** → CSPRNG del sistema, 256 bits de entropía.
@@ -460,7 +673,7 @@ Alternativas modernas (cookie `HttpOnly; Secure; SameSite=Strict`) se recomienda
 
 ---
 
-## 13 · Debilidades y deuda identificada
+## 14 · Debilidades y deuda identificada
 
 | #   | Debilidad                                                                                                          | Impacto                     | Doc           |
 | --- | ------------------------------------------------------------------------------------------------------------------ | --------------------------- | ------------- |
@@ -477,7 +690,7 @@ Alternativas modernas (cookie `HttpOnly; Secure; SameSite=Strict`) se recomienda
 
 ---
 
-## 14 · Recomendaciones (para 25 y 28)
+## 15 · Recomendaciones (para 25 y 28)
 
 - Migrar el token de sesión a cookie **`HttpOnly; Secure; SameSite=Strict`** con endpoint dedicado que lo lea del cookie header. Mantener compat temporal con `localStorage` durante la transición.
 - Añadir **rate limiting específico** en `login.php` (5 intentos / minuto por IP + por login) usando el mismo `RateLimit` del backend.
@@ -488,7 +701,7 @@ Alternativas modernas (cookie `HttpOnly; Secure; SameSite=Strict`) se recomienda
 
 ---
 
-## 15 · Referencias cruzadas
+## 16 · Referencias cruzadas
 
 | Necesitas saber…                                       | Documento                                                        |
 | ------------------------------------------------------ | ---------------------------------------------------------------- |

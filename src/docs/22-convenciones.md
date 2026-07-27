@@ -286,14 +286,57 @@ switch ($accion) {
 
 **Cuándo usar Patrón B:** dominios con muchas operaciones que comparten configuración/setup, o dominios que llaman al framework LAN con varias sub-acciones.
 
-### 5.3 Cuál elegir para código nuevo
+### 5.3 Patrón C · Superficies API v1 — añadido en 2026-07-17
 
-Guía:
+**Emergente y recomendado para código nuevo con requisitos formales** — APIs de consumo externo, integraciones B2B, o cualquier endpoint donde importe trazabilidad estricta (correlation IDs), rate limiting, ocultamiento de errores y envelope consistente.
 
-- **Ambos son válidos.** No hay decisión "correcta" única.
-- Si el dominio tiene < 5 operaciones y no comparten configuración compleja → **Patrón A**.
-- Si el dominio tiene > 5 operaciones o comparte lógica de setup (cargar contextos, conectar al framework) → **Patrón B**.
-- Coherencia con el resto del dominio prima sobre criterios abstractos.
+Ver arquitectura completa en [03 §5.3](./03-arquitectura-backend.md). Convenciones específicas del patrón:
+
+**Estructura de carpetas:**
+
+```
+api/v1/
+├── core/                          ← núcleo compartido — no tocar sin justificación
+│   ├── bootstrap.php              ← define APP_ROOT, carga LanClient, Response, Controller
+│   ├── Response.php               ← Response::ok / Response::error
+│   └── Controller.php             ← clase base
+├── public/
+│   ├── .htaccess                  ← ver 15 §8bis.1
+│   ├── index.php                  ← router (tabla enriquecida)
+│   ├── auth/apikey.php
+│   └── controllers/
+│       └── <Recurso>Controller.php
+└── private/
+    ├── .htaccess                  ← ver 15 §8bis.2
+    ├── index.php
+    └── controllers/
+        └── <Recurso>Controller.php
+```
+
+**Reglas obligatorias del patrón C:**
+
+1. **Rutas absolutas siempre.** Usar `APP_ROOT` (definida en `bootstrap.php`) — nunca `../../../` contados a mano. Este era un bug frecuente que el patrón elimina por diseño.
+2. **Controlador hereda de `Controller`** (clase base).
+3. **Respuestas solo a través de `Response::ok()` o `Response::error()`** — nunca `echo json_encode(...)` directo. Garantiza envelope + `X-Request-ID`.
+4. **Router es una tabla enriquecida** con al menos: `[Controlador, método, módulo, métodos_http, scope|permiso]`.
+5. **Validación de parámetros contra whitelist** antes de propagar al framework LAN (ver `empresa` en `ProveedoresController`).
+6. **`display_errors = Off` + `log_errors = On`** en el `bootstrap.php` — los detalles nunca llegan al cliente.
+
+**Cuándo usar C sobre A o B:**
+
+| Situación | Patrón sugerido |
+|---|---|
+| CRUD interno simple del SPA | A o B (según cohesión) |
+| Endpoint interno usado por > 3 componentes React | B |
+| API para consumo externo | **C — pública** |
+| Refactor de un dominio interno complejo | **C — privada** |
+| Bug fix en endpoint legacy | Mantener el patrón existente |
+
+**Cuándo NO usar C:**
+
+- Bugfixes triviales en endpoints legacy — no reescribir por gusto.
+- Módulos que van a deprecarse pronto.
+- Endpoints que no valen la ceremonia (script one-off).
 
 ---
 
@@ -321,6 +364,37 @@ components/<Dominio>/<Modulo>/
 **Cuándo NO aplicar:**
 
 - Componentes muy simples (< 30 líneas) sin lógica de red — un solo `.jsx` es suficiente.
+
+### 6.1 · Introducción incremental de TypeScript (política v1.x, 2026-07-17)
+
+**Coexistencia por diseño.** El proyecto es JSX/JS desde su inicio. Desde v1.x, TypeScript se introduce **selectivamente** — no hay migración masiva planeada. Reglas:
+
+**Usar `.ts` / `.tsx` cuando:**
+
+- El código consume una API externa que **publica sus propios tipos** (ej. `darkreader`, futuras integraciones tipadas).
+- El código maneja **datos con forma estricta y crítica** (ej. contratos con backends v1 que tienen envelope conocido).
+- El código es un **utilitario reutilizable** que se usará en muchos lugares (ej. `buildMicrosoftAuthUrl`).
+
+**Mantener en `.js` / `.jsx`:**
+
+- Componentes existentes que ya funcionan bien.
+- Módulos con formas de datos volátiles o inferidas.
+- Hooks internos de un solo módulo (sin exposición amplia).
+
+**Reglas al escribir TypeScript nuevo:**
+
+- **No usar `any`.** Preferir `unknown` + type guards, o tipos explícitos.
+- **Export types desde el archivo.** Los tipos de dominio son parte del API público del módulo.
+- **Evitar `!` (non-null assertion).** Es una promesa al compilador que se puede romper.
+- **`tsconfig.json` con `strict: true`** — la app usa esta configuración desde el primer `.ts`.
+
+**Interoperabilidad:**
+
+- Un `.jsx` puede importar de un `.ts` sin declaraciones adicionales — Vite lo maneja transparentemente.
+- Un `.ts` puede importar de un `.jsx` — los tipos son `any` implícitos, pero el código funciona.
+- **No es necesario renombrar** archivos existentes para usar tipos de un nuevo `.ts`.
+
+**Ejemplo canónico actual:** `hooks/useDarkMode.ts` — hook para el modo oscuro que consume la API tipada de DarkReader. Ver [04 §12.1](./04-arquitectura-frontend.md).
 
 ---
 

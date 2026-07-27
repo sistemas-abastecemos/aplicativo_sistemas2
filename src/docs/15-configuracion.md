@@ -414,6 +414,74 @@ Adicionalmente, se recomienda mover el `.env` fuera del docroot en el próximo d
 
 ---
 
+## 8bis · Superficies API v1 — `.htaccess` (2026-07-17)
+
+Con la introducción de las superficies `api/v1/public` y `api/v1/private` ([03 §5.3](./03-arquitectura-backend.md)), se añadieron **dos `.htaccess` nuevos**, uno por superficie, con endurecimiento por defecto.
+
+### 8bis.1 `backend/api/v1/public/.htaccess`
+
+```apache
+# ─── Rewrites al router centralizado ───
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [L,QSA]
+
+# ─── Bloqueo de archivos sensibles ───
+<FilesMatch "\.(env|log|bak|sql|md|json)$">
+    Require all denied
+</FilesMatch>
+
+# ─── Deshabilitar listado de directorios ───
+Options -Indexes
+
+# ─── Cabeceras de seguridad ───
+Header always set X-Content-Type-Options "nosniff"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+Header always unset X-Powered-By
+
+# CORS abierto — la seguridad recae en X-API-KEY + rate limit + HTTPS
+Header set Access-Control-Allow-Origin "*"
+Header set Access-Control-Allow-Methods "GET, POST, OPTIONS"
+Header set Access-Control-Allow-Headers "Content-Type, X-API-KEY"
+```
+
+**Justificación del `Access-Control-Allow-Origin: *`:** la superficie está diseñada para consumo desde cualquier cliente. Bloquear CORS solo entorpecería integraciones legítimas — la protección real es la API key hasheada + rate limit por key + HTTPS + WAF de Cloudflare.
+
+### 8bis.2 `backend/api/v1/private/.htaccess`
+
+```apache
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [L,QSA]
+
+<FilesMatch "\.(env|log|bak|sql|md|json)$">
+    Require all denied
+</FilesMatch>
+
+Options -Indexes
+
+Header always set X-Content-Type-Options "nosniff"
+Header always set X-Frame-Options "SAMEORIGIN"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+Header always unset X-Powered-By
+
+# CORS restringido — solo el propio origen (el SPA)
+# La configuración se define en cors.php reutilizado del legacy
+```
+
+**Diferencias clave frente a la pública:**
+
+- **`X-Frame-Options: SAMEORIGIN`** — la superficie privada podría ser embebida en iframes internos (dashboards del SPA), pero no por terceros.
+- **CORS restringido** — reutiliza `middlewares/cors.php` con allow-list explícito, en vez de `*`.
+
+### 8bis.3 `.htaccess` legacy — sigue pendiente
+
+⚠ El `.htaccess` de `backend/backend/` (superficie legacy) **no** tiene todavía estos headers. Es deuda documentada en 26 (DT-014, DT-015) — parcialmente atendida en v1.x pero solo en las nuevas superficies. El refactor del legacy queda pendiente en 25.
+
+---
+
 ## 9 · Configuración del hosting cPanel
 
 Elementos que **no viven en el código** pero forman parte de la configuración operacional.

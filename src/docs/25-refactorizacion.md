@@ -58,6 +58,8 @@ Incluye DT-001, DT-002, DT-005, DT-011, DT-014, DT-015, DT-016, DT-036, DT-037.
 
 **Ítems atendidos:** DT-005.
 
+**🟡 Estado (actualizado 2026-07-17):** Parcialmente aplicado — el patrón ya está en producción en la superficie `api/v1/public` con 30 req/min por API key. **Falta portarlo a `login.php` y `login_microsoft.php` del backend legacy.**
+
 **Cambio propuesto:**
 
 Al inicio de `login.php` y `login_microsoft.php`:
@@ -79,6 +81,8 @@ RateLimit::check("login-{$loginAttempted}", 3, 60); // 3 intentos por login / mi
 ### 2.3 P1.3 · Headers de seguridad en `.htaccess`
 
 **Ítems atendidos:** DT-014, DT-015.
+
+**🟡 Estado (actualizado 2026-07-17):** Parcialmente aplicado — las superficies `api/v1/public` y `api/v1/private` ya tienen headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, sin `X-Powered-By`). **Falta CSP completa y HSTS, y falta aplicar todos al `.htaccess` del backend legacy.**
 
 **Cambio propuesto** — añadir al `.htaccess` del backend cPanel:
 

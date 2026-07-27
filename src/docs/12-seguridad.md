@@ -71,19 +71,24 @@ Antes del detalle por categoría, evaluación honesta del estado actual:
 
 | Área                            | Puntaje           | Comentario                                                                          |
 | ------------------------------- | ----------------- | ----------------------------------------------------------------------------------- |
-| **Autenticación de usuarios**   | 🟢 Buena          | bcrypt, tokens CSPRNG, SSO Microsoft, doble verificación por request                |
-| **Autorización**                | 🟢 Buena          | Deny by default, AND rol × cargo, sin bypass automático, revocación en vivo         |
+| **Autenticación de usuarios**   | 🟢 Buena          | bcrypt, tokens CSPRNG, SSO Microsoft (con silent SSO desde v1.2), doble verificación por request |
+| **Autenticación de aplicaciones (v1.x)** | 🟢 Buena | API keys hasheadas SHA-256, `hash_equals`, scopes, IP allowlist opcional, rate limit 30/min      |
+| **Autorización**                | 🟢 Buena          | Deny by default, AND rol × cargo, sin bypass automático, revocación en vivo, scopes por API key  |
 | **Aislamiento del ERP**         | 🟢 Buena          | Framework LAN + túnel Cloudflared + IP allow-list + Bearer M2M + `X-Usuario-Origen` |
 | **Seguridad de red perimetral** | 🟢 Buena          | Cloudflare WAF, TLS, ningún puerto entrante en LAN                                  |
-| **Gestión de secretos**         | 🟡 Regular        | Credenciales BD/SMTP hardcodeadas en PHP; `.env` con secretos coexisten             |
-| **Protección contra XSS**       | 🟡 Regular        | Token en `localStorage`, sin CSP declarada en las respuestas                        |
-| **Rate limiting**               | 🟡 Regular        | Implementado (`RateLimit`) pero no aplicado en `login.php`                          |
-| **Auditoría y logs**            | 🟢 Buena          | Centralización, trazabilidad usuario → ERP, contexto rico                           |
+| **Gestión de secretos**         | 🟡 Regular        | Credenciales BD/SMTP hardcodeadas en PHP (DT-001, DT-002); `.env` con secretos coexisten. **API keys en v1.x ya hasheadas** |
+| **Protección contra XSS**       | 🟡 Regular        | Token en `localStorage`, sin CSP declarada en las respuestas del backend legacy. **Nuevas superficies v1 ya con headers de seguridad** |
+| **Rate limiting**               | 🟡 Regular        | **Aplicado en superficie pública v1 (30/min)**. Sigue faltando en `login.php` legacy (DT-005 abierto) |
+| **Endurecimiento de headers**   | 🟡 Regular        | **Superficies v1 con X-Content-Type-Options, X-Frame-Options, Referrer-Policy, sin X-Powered-By**. Backend legacy sigue sin ellos (DT-015 abierto) |
+| **Ocultamiento de errores**     | 🟢 Buena (v1) 🟡 Regular (legacy) | Superficies v1: `display_errors=off`, detalles nunca se filtran al cliente, solo `request_id`. Legacy pendiente |
+| **Auditoría y logs**            | 🟢 Buena          | Centralización, trazabilidad usuario → ERP, contexto rico, `X-Request-ID` en v1 |
 | **Rotación de secretos**        | 🔴 No documentada | `API_SECRET`, `MICROSOFT_CLIENT_SECRET`, passwords BD sin política                  |
 | **Backups y recuperación**      | 🔴 No observable  | Requiere consulta a operación (doc 19)                                              |
 | **Cumplimiento / retención**    | 🟡 Regular        | Logs guardan `login_intentado` — revisar retención                                  |
 
 Interpretación: **postura sólida en las áreas críticas (auth, autorización, aislamiento del ERP)** con debilidades tácticas en gestión de secretos y protección del cliente. Ninguna vulnerabilidad crítica observada; múltiples oportunidades de endurecimiento.
+
+**Cambio importante desde v1.x (2026-07-17):** las nuevas superficies `api/v1/public` y `api/v1/private` incorporan de inicio buenas prácticas que se recomendaban en 25 para el backend legacy — endurecimiento de headers, ocultamiento de errores, rate limiting, hash de credenciales. **El bug pattern del pasado no se propaga a código nuevo**, aunque el legacy sigue con las mismas deudas hasta que se refactorice.
 
 ---
 
@@ -182,6 +187,58 @@ Allow-list explícita en `backend/api/middlewares/cors.php`:
 ### 5.8 Enmascaramiento con 404 falso (`check_role.php`)
 
 Ver 11 §11. Es una técnica de **security-through-obscurity de bajo costo**. Aporta valor marginal contra reconocimiento automatizado, no sustituye a defensas reales.
+
+### 5.9 Superficies API v1 — endurecimiento por defecto (2026-07-17)
+
+Las nuevas superficies `api/v1/public` y `api/v1/private` (documentadas en [03 §5.3](./03-arquitectura-backend.md)) incorporan las siguientes protecciones como línea base:
+
+**Endurecimiento vía `.htaccess`** — ambas superficies:
+
+```apache
+# Bloqueo de acceso directo a archivos sensibles
+<FilesMatch "\.(env|log|bak|sql|md|json)$">
+    Require all denied
+</FilesMatch>
+
+# Deshabilitar listado de directorios
+Options -Indexes
+
+# Cabeceras de seguridad
+Header set X-Content-Type-Options "nosniff"
+Header set Referrer-Policy "strict-origin-when-cross-origin"
+Header unset X-Powered-By
+Header always unset X-Powered-By
+```
+
+**Diferencias entre superficies:**
+
+| Header               | Pública                                | Privada                                |
+|----------------------|----------------------------------------|----------------------------------------|
+| `Access-Control-Allow-Origin` | `*` (abierto)                    | Mismo origen                           |
+| `X-Frame-Options`    | No aplica (API — sin embed HTML)      | `SAMEORIGIN`                           |
+| Rate limit           | 30/min por API key                     | Sin rate limit dedicado (dep. auth)    |
+
+**Justificación del CORS abierto en pública:** la API está diseñada para consumo desde cualquier cliente. La seguridad recae en `X-API-KEY` + rate limit + HTTPS, no en CORS. Bloquear CORS solo entorpecería a integraciones legítimas.
+
+**Ocultamiento de errores:**
+
+```ini
+; php.ini overrides al inicio del bootstrap.php
+display_errors = Off
+log_errors = On
+```
+
+Cualquier excepción no controlada se convierte en:
+
+```json
+{ "success": false, "meta": {...}, "error": { "code": "internal_error", "message": "Ha ocurrido un error interno" } }
+```
+
+Los detalles reales (stack trace, mensaje de excepción, query SQL fallida) **se registran en `RemoteLogger` correlacionados con el `X-Request-ID`** — accesibles solo desde el módulo de bitácora del aplicativo.
+
+**Whitelist de `empresa`:** el parámetro `empresa` (usado para conmutar entre `biable01` y `biable02`) se valida en el controlador **antes** de propagarlo al framework LAN. Cualquier valor fuera de `['abastecemos', 'tobar']` genera `400 invalid_parameter`. Sin este whitelist, el parámetro podría inyectar nombres de bases de datos arbitrarios al framework.
+
+**Enmascaramiento de API keys en logs:** las llaves nunca se registran completas. Formato aceptado: `sk_ab...cdef` (primeros 4 + últimos 4 caracteres).
 
 ---
 
@@ -443,30 +500,31 @@ Ver también 05 §7 y 08 §7.
 
 **🔴 Alta (mitigar en el corto plazo — semanas)**
 
-1. **Credenciales de BD hardcoded** en `backend/api/config/database.php`, `database_proveedor.php` y 5 cronjobs. Migrar a variables de entorno.
-2. **`VITE_LECTOR_PASSWORD` en bundle JS**. Rediseñar el gate del lector server-side.
-3. **`VITE_TOKEN_AGENT_PRINTER` en bundle JS**. Reconsiderar el modelo de auth del agente.
-4. **Sin rate limiting en `login.php`**. Añadir `RateLimit::check` con umbrales estrictos (5 intentos / minuto / IP).
-5. **`.env.bak` en `repo/`** conviviendo con `.env`. Eliminar o mover fuera del docroot.
+1. **Credenciales de BD hardcoded** en `backend/api/config/database.php`, `database_proveedor.php` y 5 cronjobs. Migrar a variables de entorno. **(Abierto — confirmado en changelog v1.x)**
+2. **`VITE_LECTOR_PASSWORD` en bundle JS**. Rediseñar el gate del lector server-side. **(Abierto)**
+3. **`VITE_TOKEN_AGENT_PRINTER` en bundle JS**. Reconsiderar el modelo de auth del agente. **(Abierto)**
+4. **Sin rate limiting en `login.php`**. Añadir `RateLimit::check` con umbrales estrictos (5 intentos / minuto / IP). **(Abierto — pero ya aplicado en superficie pública v1 como precedente)**
+5. **`.env.bak` en `repo/`** conviviendo con `.env`. Eliminar o mover fuera del docroot. **(Abierto)**
 
 **🟡 Media (planificar en 1–3 meses)**
 
-6. **Token de sesión en `localStorage`**. Migrar a cookie `HttpOnly; Secure; SameSite=Strict`.
-7. **Sin CSP** en respuestas del backend. Añadir política mínima.
-8. **Sin `X-Frame-Options`, `HSTS`, `Referrer-Policy`** globales. Añadir en `.htaccess` o middleware.
+6. **Token de sesión en `localStorage`**. Migrar a cookie `HttpOnly; Secure; SameSite=Strict`. **(Abierto)**
+7. **Sin CSP** en respuestas del backend. Añadir política mínima. **(Parcial: nuevas superficies v1 tienen headers de seguridad; legacy pendiente)**
+8. **Sin `X-Frame-Options`, `HSTS`, `Referrer-Policy`** globales. Añadir en `.htaccess` o middleware. **(Parcial: superficies v1 los tienen; backend legacy pendiente)**
 9. **Modo TLS Cloudflare no confirmado**. Verificar Full Strict.
 10. **Enumeración de usuarios** por respuesta diferenciada en `login.php`. Uniformar el mensaje.
 11. **Sin política de rotación** de `API_SECRET`, `MICROSOFT_CLIENT_SECRET`, passwords BD.
 12. **Sin política de retención** en `sys_logs`. Definir purga.
+13. **Migración fase 5 pendiente** (v1.x): eliminar columna `api_keys.llave` en texto plano una vez todas las apps consumidoras estén migradas a `llave_hash`.
 
 **🟢 Baja (registrar para 28 · Roadmap)**
 
-13. **Consolidar los dos loggers** del backend cPanel (`services/logger` vs `utils/logger`).
-14. **Duplicación del token M2M** en dos lugares — considerar única fuente.
-15. **Sin monitoreo activo / SIEM**. Evaluar integración con solución externa.
-16. **Sin fingerprint de dispositivo** para detectar uso anómalo de sesiones.
-17. **Migrar `check_role` legacy a `check_permission`** progresivamente.
-18. **404 falso de LiteSpeed** — verificar si el hosting real es LiteSpeed o si conviene alinear el fingerprint.
+14. **Consolidar los dos loggers** del backend cPanel (`services/logger` vs `utils/logger`).
+15. **Duplicación del token M2M** en dos lugares — considerar única fuente.
+16. **Sin monitoreo activo / SIEM**. Evaluar integración con solución externa.
+17. **Sin fingerprint de dispositivo** para detectar uso anómalo de sesiones.
+18. **Migrar `check_role` legacy a `check_permission`** progresivamente.
+19. **404 falso de LiteSpeed** — verificar si el hosting real es LiteSpeed o si conviene alinear el fingerprint.
 
 ### 12.2 Elementos a validar con operación (no observables desde código)
 

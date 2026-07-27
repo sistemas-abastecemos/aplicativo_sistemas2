@@ -356,6 +356,28 @@ No hay vista consolidada que muestre "días conciliados vs no conciliados en el 
 
 **Recomendación (28):** dashboard ejecutivo del módulo contable.
 
+### 12.6 Bugs corregidos en v1.x
+
+**Fix `usePrefijosDian.ejecutarGuardarConfiguracionDIan` (2026-07-17).** Se corrigió una excepción silenciosa inválida que se lanzaba dentro del hook y disparaba una **falsa notificación de error** aunque el guardado hubiera sido exitoso. El usuario veía un toast rojo pese a que los cambios sí se persistían — inconsistencia confusa.
+
+**Antes (patrón erróneo):**
+
+```javascript
+try {
+  const res = await apiService.guardarConfigPrefijos(datos);
+  if (!res.success) {
+    // ...
+  }
+} catch (err) {
+  // La excepción se lanzaba aquí por un motivo ajeno al guardado
+  addNotification({ type: 'error', message: 'Error al guardar' });
+}
+```
+
+**Después:** la lógica del catch discrimina entre errores reales del guardado y excepciones colaterales (limpieza de estado, refresh de lista, etc.), reportando error solo cuando el guardado falló efectivamente.
+
+**Impacto:** los usuarios ya no reciben notificaciones falsas de error cuando editan la configuración de prefijos DIAN.
+
 ---
 
 ## 13 · Puntos pendientes de análisis

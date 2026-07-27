@@ -196,7 +196,36 @@ Implementación:
 - Sin bypass automático para el rol `admin` — se explica en §7.
 - Si falla → `403` con JSON estándar y `warning` con contexto completo.
 
-**Es la generación vigente** y la recomendada para nuevos endpoints. Coexiste con la Generación A.
+**Es la generación vigente** y la recomendada para nuevos endpoints internos. Coexiste con la Generación A.
+
+### 4.3 Generación C — **scopes por API key** (añadida en 2026-07-17)
+
+Introducida para la superficie `api/v1/public`. Es un modelo distinto de los anteriores porque **no autoriza usuarios finales, autoriza aplicaciones consumidoras**.
+
+- **Autoritativo:** columna `api_keys.scopes` (varchar o JSON) — ver [14 §5](./14-base-de-datos.md).
+- **Formato:** lista de strings tipo `comercial.proveedores`, `inventario.saldos`, o comodín `*` para todas.
+- **Verificación:** `Controller.php` (clase base) compara el scope declarado en el router contra los scopes de la API key **antes** de invocar el handler. Ver [03 §5.3](./03-arquitectura-backend.md).
+
+**Ejemplo de fila en `api_keys`:**
+
+```
+llave_hash: <SHA-256>
+scopes:     ["comercial.proveedores", "inventario.saldos"]
+ips_permitidas: ["190.145.x.x"]
+activa: 1
+```
+
+**Comparación de las tres generaciones:**
+
+| Aspecto           | A — check_role       | B — check_permission     | C — scopes API v1              |
+|-------------------|----------------------|--------------------------|--------------------------------|
+| Autoritativo      | `usuarios.id_rol`    | `rol_menu` × `cargo_menu`| `api_keys.scopes`              |
+| Sujeto            | Usuario en sesión    | Usuario en sesión        | Aplicación consumidora         |
+| Granularidad      | Rol (`admin`/`usuario`) | Ver/Crear/Editar/Eliminar por menú | Namespace por recurso    |
+| Enforcement       | Middleware inline    | Middleware inline        | En clase base `Controller`     |
+| Uso previsto      | Legacy               | Endpoints internos       | APIs para consumo externo      |
+
+**Regla clara:** una petición **interna** del SPA a un endpoint de la superficie privada v1 **sigue usando** la Generación B (rol × cargo). Los scopes son **exclusivos de la superficie pública**.
 
 ---
 

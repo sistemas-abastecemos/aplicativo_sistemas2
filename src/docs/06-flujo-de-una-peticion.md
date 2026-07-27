@@ -145,6 +145,65 @@ sequenceDiagram
 
 ⚠ La diferenciación entre los tres facilita la enumeración de usuarios (ver 12 §11.4 · Information Disclosure). Recomendación consolidada en 12 §12.
 
+### 3.1 Variante · Silent SSO al cargar `/login` (añadido en v1.2, 2026-07-24)
+
+Complemento del login estándar. Documentado en detalle en [10 §4.5](./10-autenticacion.md). Aquí solo el diagrama de flujo end-to-end enfocado en el punto de entrada:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Navegador
+    participant SPA as Login.jsx
+    participant HK as useMicrosoftAuth
+    participant SS as sessionStorage
+    participant IFR as iframe oculto
+    participant MS as Microsoft Entra
+    participant BE as login_microsoft.php
+    participant DB as MySQL
+
+    B->>SPA: navega a /login (o /login?logout=true)
+    SPA->>HK: monta hook al primer render
+    HK->>SS: lee 'user_logged_out'
+
+    alt Flag activo (recién hizo logout)
+        HK-->>SPA: skip silent · modo manual
+        Note over SPA: Muestra form + botón Microsoft
+    else Sin flag
+        HK->>SS: lee 'ms_silent_login_attempted'
+        alt ya intentado en este tab
+            HK-->>SPA: skip silent
+        else primera vez
+            HK->>SS: SET 'ms_silent_login_attempted' = true
+            HK->>HK: buildMicrosoftAuthUrl · prompt=none
+            HK->>IFR: crea iframe con URL construida
+            IFR->>MS: authorize?prompt=none
+
+            alt Usuario logueado en Microsoft en otro tab / desktop
+                MS-->>IFR: redirect /silent-callback?code=xxx
+                IFR->>HK: postMessage code
+                HK->>BE: POST login_microsoft.php {code, silent:true}
+                BE->>DB: verifica usuario + genera sesión
+                DB-->>BE: OK
+                BE-->>HK: {user, token}
+                HK->>SPA: setState autenticado
+                SPA->>B: navigate('/inicio')
+            else Sin sesión Microsoft activa
+                MS-->>IFR: redirect con error=login_required
+                IFR->>HK: postMessage error (silencioso)
+                HK-->>SPA: modo manual
+                Note over SPA: Usuario ve el form normal
+            end
+        end
+    end
+```
+
+**Puntos operativos:**
+
+- El usuario **no ve el iframe**. Está oculto con `display: none`.
+- Si la sesión Microsoft está activa, el redirect a `/inicio` ocurre en **< 500ms** — el usuario percibe la app cargando directo al dashboard sin pasar por login.
+- Si no está activa, el fallo es silencioso — el usuario ve la pantalla de login normal.
+- **Nunca hay error visible al usuario** por esta ruta — todos los fallos se manejan como "no aplica, seguir en manual".
+
 ---
 
 ## 4 · Escenario 2 · Consulta al ERP (flujo canónico)

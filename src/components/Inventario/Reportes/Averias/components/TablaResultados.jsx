@@ -29,7 +29,7 @@ const TablaResultados = ({ datos }) => {
 
   const handleSort = (key) => {
     setSortConfig((prev) => {
-      // CORREGIDO: Se quitaron las barras invertidas de escape en "asc" y "desc"
+      // Se quitaron las barras invertidas de escape en "asc" y "desc"
       const direction =
         prev.key === key && prev.direction === "asc" ? "desc" : "asc";
       return { key, direction };

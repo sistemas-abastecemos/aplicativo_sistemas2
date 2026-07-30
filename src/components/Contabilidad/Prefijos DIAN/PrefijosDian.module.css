@@ -513,7 +513,7 @@
 }
 
 /* ==========================================================================
-   Corrección de Columnas Congeladas (Sticky Multi-Columna)
+   Columnas Congeladas (Sticky Multi-Columna)
    ========================================================================== */
 .stickyColSede {
   position: sticky !important;

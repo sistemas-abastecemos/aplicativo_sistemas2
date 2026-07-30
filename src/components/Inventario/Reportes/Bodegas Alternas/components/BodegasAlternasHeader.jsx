@@ -13,7 +13,7 @@ const BodegasAlternasHeader = React.memo(() => {
   return (
     <header className={styles.encabezadoSeccion}>
       <div className={styles.encabezadoSeccionContent}>
-        <h1 className={styles.title}>Gobernanza de Bodegas Alternas</h1>
+        <h1 className={styles.title}>Existencias Bodegas Alternas</h1>
         <p className={styles.subtitle}>
           Análisis en tiempo real de saldos en bodegas alternas.
         </p>

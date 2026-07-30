@@ -1,6 +1,6 @@
 import {
-  request,
-  buildHeaders,
+  request as originalRequest,
+  buildHeaders as originalBuildHeaders,
   buildUrl,
   getToken,
   readTextAsJson,
@@ -8,6 +8,30 @@ import {
   fetchWithTimeout,
   runResultadoReport,
 } from "../utils/http/index.js";
+
+/**
+ * Wrapper local de buildHeaders para api.js.
+ * Sobreescribe cualquier configuracion previa y fuerza auth: "required"
+ * de manera estricta en todas las peticiones del modulo.
+ */
+const buildHeaders = (options = {}) => {
+  return originalBuildHeaders({
+    ...options,
+    auth: "required",
+  });
+};
+
+/**
+ * Wrapper local de request para api.js.
+ * Asegura que todas las peticiones procesadas por este metodo
+ * lleven de forma obligatoria el parametro auth: "required".
+ */
+const request = (url, options = {}) => {
+  return originalRequest(url, {
+    ...options,
+    auth: "required",
+  });
+};
 
 export const apiService = {
   /////////////////////////////
@@ -128,7 +152,7 @@ export const apiService = {
 
   async getSedes(onlyActive = true) {
     return request(`/sedes/get_sedes.php?onlyActive=${onlyActive}`, {
-      auth: "none",
+      auth: "required",
       contentTypeJson: false,
       errorMessage: "Error obteniendo sedes",
       unwrap: "data",
@@ -326,6 +350,43 @@ export const apiService = {
     });
   },
 
+  ///////////////////////
+  ////// UTILIDADES /////
+  ///////////////////////
+
+  async getUtilidades(manageMode = false) {
+    return request("/v1/private/index.php?action=listar_utilidades", {
+      method: "POST",
+      body: { manage_mode: manageMode },
+      requireToken: true,
+      errorMessage: "Error al obtener la lista de utilidades",
+    });
+  },
+
+  async saveUtilidad(payload) {
+    return request("/v1/private/index.php?action=guardar_utilidad", {
+      method: "POST",
+      body: payload,
+      requireToken: true,
+      statusMessages: {
+        403: "No tiene permisos para gestionar las utilidades del dashboard",
+      },
+      errorMessage: "Error al guardar la utilidad",
+    });
+  },
+
+  async deleteUtilidad(id) {
+    return request("/v1/private/index.php?action=eliminar_utilidad", {
+      method: "POST",
+      body: { id },
+      requireToken: true,
+      statusMessages: {
+        403: "No tiene permisos para eliminar accesos directos",
+      },
+      errorMessage: "Error al eliminar la utilidad",
+    });
+  },
+
   //////////////////////////
   /////// PROVEEDORES //////
   //////////////////////////
@@ -365,6 +426,36 @@ export const apiService = {
       body: data,
       errorMessage: "Error creando proveedir",
     });
+  },
+
+  /////////////////////////
+  ////// GENERALES /////////
+  /////////////////////////
+
+  async buscarLineasSiesa(termino, empresa = "abastecemos") {
+    return request(
+      "/inventario/reportes/existencias_costos/endpoint.php?action=buscar_lineas_siesa",
+      {
+        method: "POST",
+        body: { termino, empresa },
+        check: "ok", // Valida el estado HTTP de la respuesta en lugar de json.success en la raiz
+        unwrap: "resultado", // Desempaqueta automaticamente el nodo principal 'resultado'
+        errorMessage: "Error consultando lineas de Siesa.",
+      },
+    );
+  },
+
+  async buscarBodegasSiesa(termino, empresa = "abastecemos") {
+    return request(
+      "/inventario/reportes/existencias_costos/endpoint.php?action=buscar_bodegas_siesa",
+      {
+        method: "POST",
+        body: { termino, empresa },
+        check: "ok", // Valida el estado HTTP de la respuesta en lugar de json.success en la raiz
+        unwrap: "resultado", // Desempaqueta automaticamente el nodo principal 'resultado'
+        errorMessage: "Error consultando bodegas de Siesa.",
+      },
+    );
   },
 
   /////////////////////////
@@ -1440,5 +1531,99 @@ export const apiService = {
       }
       throw error;
     }
+  },
+
+  ///////////////////////////////////////
+  //// EXISTENCIAS Y COSTOS REPORT //////
+  ///////////////////////////////////////
+
+  async obtenerReporteExistenciasCostos(lapso, local = "") {
+    return request(
+      "/inventario/reportes/existencias_costos/endpoint.php?action=obtener_reporte_existencias",
+      {
+        method: "POST",
+        body: { lapso, local },
+        errorMessage: "Fallo al compilar balances de existencias y costos.",
+      },
+    );
+  },
+
+  async obtenerReporteExistenciasCostosMultiLapso(lapsos = [], local = "") {
+    return request(
+      "/inventario/reportes/existencias_costos/endpoint.php?action=obtener_reporte_existencias_multilapso",
+      {
+        method: "POST",
+        body: { lapsos, local },
+        errorMessage:
+          "Fallo al consolidar reporte multi-periodo de existencias y costos.",
+      },
+    );
+  },
+
+  async listarLineasConfig() {
+    return request(
+      "/inventario/reportes/existencias_costos/endpoint.php?action=listar_lineas_config",
+      {
+        method: "GET",
+        contentTypeJson: false,
+        errorMessage: "Error recuperando parametros de cobertura.",
+      },
+    );
+  },
+
+  async guardarLineaConfig(payload) {
+    return request(
+      "/inventario/reportes/existencias_costos/endpoint.php?action=guardar_linea_config",
+      {
+        method: "POST",
+        body: payload,
+        errorMessage: "No se logro almacenar la parametrizacion de la linea.",
+      },
+    );
+  },
+
+  async eliminarLineaConfig(id) {
+    return request(
+      "/inventario/reportes/existencias_costos/endpoint.php?action=eliminar_linea_config",
+      {
+        method: "POST",
+        body: { id },
+        errorMessage: "Error al remover la regla de la linea.",
+      },
+    );
+  },
+
+  async listarLocalesConfig() {
+    return request(
+      "/inventario/reportes/existencias_costos/endpoint.php?action=listar_locales_config",
+      {
+        method: "GET",
+        contentTypeJson: false,
+        errorMessage:
+          "Error recuperando locales parametricos de la base de datos.",
+      },
+    );
+  },
+
+  async guardarLocalConfig(payload) {
+    return request(
+      "/inventario/reportes/existencias_costos/endpoint.php?action=guardar_local_config",
+      {
+        method: "POST",
+        body: payload,
+        errorMessage: "No se logro almacenar la parametrizacion del local.",
+      },
+    );
+  },
+
+  async eliminarLocalConfig(id) {
+    return request(
+      "/inventario/reportes/existencias_costos/endpoint.php?action=eliminar_local_config",
+      {
+        method: "POST",
+        body: { id },
+        errorMessage: "Error al remover el local del mapa analitico.",
+      },
+    );
   },
 };

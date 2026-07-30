@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useEmpresa } from "../../contexts/EmpresaContext";
 import logo from "../../assets/images/logo.png";
+import { useDarkMode } from "../../hooks/useDarkMode";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faSignOutAlt,
@@ -10,12 +11,15 @@ import {
   faTimes,
   faAnglesLeft,
   faAnglesRight,
+  faSun,
+  faMoon,
 } from "@fortawesome/free-solid-svg-icons";
 import styles from "./TopBar.module.css";
 
 const TopBar = ({ onLogout, onToggleSidebar, collapsed }) => {
   const { user } = useAuth();
   const { empresa } = useEmpresa();
+  const { isDark, toggleDarkMode } = useDarkMode();
   const navigate = useNavigate();
   const [isMobile, setIsMobile] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -112,6 +116,19 @@ const TopBar = ({ onLogout, onToggleSidebar, collapsed }) => {
 
         {/* Sección Derecha */}
         <div className={styles.rightSection}>
+          {/* Botón de Modo Oscuro */}
+          <button
+            className={styles.themeToggleBtn}
+            onClick={toggleDarkMode}
+            title={isDark ? "Cambiar a Modo Claro" : "Cambiar a Modo Oscuro"}
+            aria-label="Alternar modo oscuro"
+          >
+            <FontAwesomeIcon
+              icon={isDark ? faSun : faMoon}
+              className={isDark ? styles.sunIcon : styles.moonIcon}
+            />
+          </button>
+
           <div
             className={`${styles.toggleContainer} ${styles.disabled}`}
             title="Control mutable deshabilitado"
@@ -185,6 +202,10 @@ const TopBar = ({ onLogout, onToggleSidebar, collapsed }) => {
               </button>
             </div>
             <div className={styles.menuDivider}></div>
+            <button className={styles.menuItem} onClick={toggleDarkMode}>
+              <FontAwesomeIcon icon={isDark ? faSun : faMoon} />
+              {isDark ? "Modo Claro" : "Modo Oscuro"}
+            </button>
             <button className={styles.menuItem} onClick={handleProfileClick}>
               <FontAwesomeIcon icon={faUserCircle} /> Mi Perfil
             </button>

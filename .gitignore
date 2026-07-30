@@ -1,5 +1,88 @@
-# Logs
-logs
+# ==========================================
+# SECRETOS Y CONFIGURACIÓN SENSIBLE
+# ==========================================
+.env
+.env.*
+!.env.example
+!.env.sample
+
+config.local.php
+config/*.local.php
+credentials.php
+db.config.php
+secrets/
+.secrets/
+credentials/
+
+# Llaves y certificados
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.asc
+*.gpg
+id_rsa*
+id_ed25519*
+*_rsa
+*_ed25519
+
+# Cloud
+.azure/
+*.publishsettings
+*.pubxml
+*.pubxml.user
+cloudflared.yml
+.cloudflared/
+
+# ==========================================
+# BASE DE DATOS
+# ==========================================
+*.sql
+*.sql.gz
+*.dump
+*.bak
+*.backup
+*.sqlite
+*.sqlite3
+*.db
+backup/
+backups/
+dumps/
+# Excepciones: DDL de migraciones y schema base
+!sql/migracion_*.sql
+!sql/schema.sql
+!sql/*.example.sql
+!database/migrations/**/*.sql
+
+# ==========================================
+# NODE / FRONTEND
+# ==========================================
+node_modules/
+dist/
+dist-ssr/
+build/
+.next/
+.nuxt/
+.svelte-kit/
+.turbo/
+.parcel-cache/
+.cache/
+*.local
+
+# ==========================================
+# PHP / COMPOSER
+# ==========================================
+vendor/
+composer.phar
+composer.lock.local
+
+# ==========================================
+# LOGS
+# ==========================================
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,24 +90,57 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# ==========================================
+# TESTS Y COVERAGE
+# ==========================================
+coverage/
+.nyc_output/
+*.lcov
+.pytest_cache/
+htmlcov/
+.tox/
+.eslintcache
+.stylelintcache
 
-# Editor directories and files
+# ==========================================
+# EDITORES E IDEs
+# ==========================================
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
+!.vscode/settings.example.json
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
 
-# Entorno / Secretos
-.env
-.env.local
-.env.*.local
-!.env.example
+# ==========================================
+# SISTEMA OPERATIVO
+# ==========================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+ehthumbs.db
+*.stackdump
+.Trash-*
+.fuse_hidden*
+
+# ==========================================
+# ARCHIVOS COMPRIMIDOS (para evitar subir dumps o backups accidentalmente)
+# ==========================================
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# ==========================================
+# DOCUMENTACIÓN INTERNA (no pública)
+# ==========================================
+CHANGELOGS.md
+NOTES.md
+TODO.md
+docs/internal/

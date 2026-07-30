@@ -330,7 +330,6 @@ export const usePrefijosDian = (loginUsuario, addNotification) => {
           type: "success",
           message: "Parametrizacion fiscal actualizada con exito",
         });
-        s;
         setConfigList(JSON.parse(JSON.stringify(configListEdit)));
         // setActiveTab("auditoria");
       }

@@ -63,6 +63,10 @@ function PrivateRoute({ children }) {
 
   // Redirigir si no está autenticado
   if (!user) {
+    // Guarda la URL exacta (incluyendo querystrings si los hay)
+    const targetUrl = location.pathname + location.search;
+    sessionStorage.setItem("returnUrl", targetUrl);
+
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
@@ -74,7 +78,7 @@ function PrivateRoute({ children }) {
   // Redirigir si no tiene acceso a la ruta
   if (!hasAccess) {
     console.warn(
-      `Acceso denegado a: ${location.pathname}. Redirigiendo a /inicio`
+      `Acceso denegado a: ${location.pathname}. Redirigiendo a /inicio`,
     );
     return <Navigate to="/inicio" replace />;
   }

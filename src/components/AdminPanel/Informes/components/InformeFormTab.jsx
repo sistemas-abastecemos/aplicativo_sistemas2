@@ -83,6 +83,24 @@ const InformeFormTab = ({ formData, onChange, areas }) => (
         </select>
         <label>Estado del Módulo</label>
       </div>
+
+      {/* Campo Orden de Visualización añadido */}
+      <div className={`${styles.formGroup} ${styles.floating}`}>
+        <input
+          type="number"
+          name="orden"
+          value={
+            formData.orden !== null && formData.orden !== undefined
+              ? formData.orden
+              : ""
+          }
+          placeholder="Vacío para autocalcular (Siguiente +1)"
+          onChange={onChange}
+          min="1"
+          className={styles.formInput}
+        />
+        <label>Orden de Visualización</label>
+      </div>
     </div>
   </div>
 );

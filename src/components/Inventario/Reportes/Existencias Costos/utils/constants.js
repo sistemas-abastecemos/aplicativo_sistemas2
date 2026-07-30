@@ -1,0 +1,12 @@
+export const TABS_EXISTENCIAS = {
+  ANALITICA: "analitica",
+  PARAMETROS: "parametros",
+};
+
+export const EXCEL_PALETTE = {
+  GREEN_HEADER: "FF009B6D",
+  DARK_TEXT: "FF1D1D1F",
+  LIGHT_BG: "FFF5f5F7",
+  BORDER_LINE: "FFE2E8F0",
+  EXCESS_ALERT: "FFFFF2F2",
+};

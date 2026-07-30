@@ -22,25 +22,30 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
+  const [token, setToken] = useState(() => localStorage.getItem("authToken"));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Usar useRef para almacenar el usuario actual sin causar re-renders
   const userRef = useRef(null);
 
   const logout = useCallback(
     (message = "", redirect = true) => {
-      const token = localStorage.getItem("authToken");
+      const activeToken = token || localStorage.getItem("authToken");
 
-      if (token) {
+      if (activeToken) {
         apiService
-          .logout(token)
+          .logout(activeToken)
           .catch((err) =>
-            console.error("Error al cerrar sesión en el servidor:", err),
+            console.error("Error al cerrar sesion en el servidor:", err),
           );
       }
 
+      // Registra el cierre de sesion voluntario para prevenir auto-login
+      sessionStorage.setItem("user_logged_out", "true");
+      sessionStorage.setItem("ms_silent_login_attempted", "true");
+
       setUser(null);
+      setToken(null);
       userRef.current = null;
       sessionStorage.removeItem("hasRedirectedThisSession");
       localStorage.removeItem("authToken");
@@ -50,24 +55,24 @@ export const AuthProvider = ({ children }) => {
         const safeMessage =
           typeof message === "string"
             ? message
-            : message?.message || "Sesión cerrada";
+            : message?.message || "Sesion cerrada";
         setError(safeMessage);
       }
 
       if (redirect) {
-        navigate("/login", { replace: true });
+        navigate("/login?logout=true", { replace: true });
       }
     },
-    [navigate],
+    [navigate, token],
   );
 
   const verifyToken = useCallback(async () => {
-    const token = localStorage.getItem("authToken");
+    const activeToken = localStorage.getItem("authToken");
 
-    // Si no hay token, no limpiamos estados ni hacemos nada si ya esta cargando un login
-    if (!token) {
+    if (!activeToken) {
       if (userRef.current !== null) {
         setUser(null);
+        setToken(null);
         userRef.current = null;
       }
       setLoading(false);
@@ -75,7 +80,7 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
-      const result = await apiService.verifyToken(token);
+      const result = await apiService.verifyToken(activeToken);
 
       if (result.success && result.user) {
         const userChanged =
@@ -83,8 +88,9 @@ export const AuthProvider = ({ children }) => {
 
         if (userChanged) {
           setUser(result.user);
+          setToken(activeToken);
           userRef.current = result.user;
-          localStorage.setItem("authToken", token);
+          localStorage.setItem("authToken", activeToken);
           localStorage.setItem("userRole", result.user.rol);
         }
       } else {
@@ -97,19 +103,18 @@ export const AuthProvider = ({ children }) => {
         logout(err.message || "Error de conexion al verificar la sesion");
       }
     } finally {
-      // Solo alteramos el loading general si no estamos en un proceso de transicion inicial
       setLoading(false);
     }
   }, [logout]);
 
   const login = async (credentials) => {
     try {
-      // setLoading(true);
       setError("");
       const response = await apiService.login(credentials);
 
       if (response.success) {
         setUser(response.user);
+        setToken(response.token);
         userRef.current = response.user;
         localStorage.setItem("authToken", response.token);
         localStorage.setItem("userRole", response.user.rol);
@@ -119,7 +124,7 @@ export const AuthProvider = ({ children }) => {
         return { success: false, message: response.message };
       }
     } catch (error) {
-      setError(error.message || "Error de conexión");
+      setError(error.message || "Error de conexion");
       return { success: false, message: error.message };
     } finally {
       setLoading(false);
@@ -128,12 +133,12 @@ export const AuthProvider = ({ children }) => {
 
   const loginWithMicrosoft = async (code, redirectUri) => {
     try {
-      // setLoading(true);
       setError("");
       const response = await apiService.loginMicrosoft(code, redirectUri);
 
       if (response.success) {
         setUser(response.user);
+        setToken(response.token);
         userRef.current = response.user;
         localStorage.setItem("authToken", response.token);
         localStorage.setItem(
@@ -154,17 +159,18 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    verifyToken(); // primera verificación
+    verifyToken();
 
     const interval = setInterval(() => {
       verifyToken();
-    }, 30000); // cada 30s
+    }, 30000);
 
     return () => clearInterval(interval);
   }, [verifyToken]);
 
   const value = {
     user,
+    token,
     loading,
     error,
     login,

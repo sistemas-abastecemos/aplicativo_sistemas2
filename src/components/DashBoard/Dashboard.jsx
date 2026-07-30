@@ -25,6 +25,7 @@ import ModulosDisponibles from "./components/ModulosDisponibles";
 import DatabaseStatusCard from "./components/DatabaseStatusCard";
 import SoporteSistemas from "./components/SoporteSistemas";
 import SystemNotice from "./components/SystemNotice";
+import UtilidadesSection from "./components/UtilidadesSection";
 
 const Dashboard = () => {
   const { user: currentUser } = useAuth();
@@ -45,6 +46,31 @@ const Dashboard = () => {
     [currentUser, userInfo],
   );
   const saludo = useMemo(() => obtenerSaludo(), []);
+
+  // Evaluacion de permisos para gestionar utilidades
+  const canEditUtilidades = useMemo(() => {
+    const findInicioNode = (items) => {
+      if (!Array.isArray(items)) return null;
+      for (const item of items) {
+        if (item.ruta === "/inicio" || item.modulo === "/inicio") {
+          return item;
+        }
+        if (item.children) {
+          const found = findInicioNode(item.children);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+
+    const inicioNode = findInicioNode(menu);
+    if (inicioNode?.permisos) {
+      const { crear, editar, eliminar } = inicioNode.permisos;
+      return Boolean(crear || editar || eliminar);
+    }
+
+    return false;
+  }, [menu]);
 
   const handleNavigateTo = (ruta) => {
     if (ruta && ruta !== "#") navigate(ruta);
@@ -91,6 +117,9 @@ const Dashboard = () => {
         />
 
         <StatsGrid stats={stats} currentTime={currentTime} />
+
+        {/* SECCION DE UTILIDADES Y ACCESOS DIRECTOS */}
+        <UtilidadesSection canEdit={canEditUtilidades} />
 
         <div className={styles.mainGrid}>
           <ModulosDisponibles

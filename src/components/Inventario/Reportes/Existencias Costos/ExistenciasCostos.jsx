@@ -64,6 +64,7 @@ const ExistenciasCostos = () => {
         {model.activeTab === TABS_EXISTENCIAS.ANALITICA ? (
           <>
             <ExistenciasCostosToolbar
+              model={model}
               lapsoCalendario={model.lapsoCalendario}
               setLapsoCalendario={model.setLapsoCalendario}
               localSeleccionado={model.localSeleccionado}
@@ -75,6 +76,10 @@ const ExistenciasCostos = () => {
               setAbcFilter={model.setAbcFilter}
               hayDatos={model.reporteData.length > 0}
               localesConfig={model.localesConfig}
+              esMultiLapso={model.esMultiLapso}
+              setEsMultiLapso={model.setEsMultiLapso}
+              lapsosSeleccionados={model.lapsosSeleccionados}
+              setLapsosSeleccionados={model.setLapsosSeleccionados}
             />
 
             {model.dataProcesada.length > 0 && (

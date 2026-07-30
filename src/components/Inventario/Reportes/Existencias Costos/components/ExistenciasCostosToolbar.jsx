@@ -8,6 +8,9 @@ import {
   faFilter,
   faFont,
   faChevronDown,
+  faLayerGroup,
+  faPlus,
+  faTimes,
 } from "@fortawesome/free-solid-svg-icons";
 
 const ExistenciasCostosToolbar = React.memo(
@@ -23,11 +26,38 @@ const ExistenciasCostosToolbar = React.memo(
     setAbcFilter,
     hayDatos,
     localesConfig = [],
+    esMultiLapso = false,
+    setEsMultiLapso = () => {},
+    lapsosSeleccionados = [],
+    setLapsosSeleccionados = () => {},
+    model = null,
   }) => {
     const [dropdownOpen, setDropdownOpen] = useState(false);
+    const [mesInput, setMesInput] = useState("");
     const dropdownRef = useRef(null);
 
-    // Cierra el menu flotante si se hace click fuera de el
+    // Resolucion de valores prioritarios desde model o props directas
+    const effEsMultiLapso = model?.esMultiLapso ?? esMultiLapso;
+    const effSetEsMultiLapso = model?.setEsMultiLapso ?? setEsMultiLapso;
+    const effLapsosSeleccionados =
+      model?.lapsosSeleccionados ?? lapsosSeleccionados;
+    const effSetLapsosSeleccionados =
+      model?.setLapsosSeleccionados ?? setLapsosSeleccionados;
+    const effLapsoCalendario = model?.lapsoCalendario ?? lapsoCalendario;
+    const effSetLapsoCalendario =
+      model?.setLapsoCalendario ?? setLapsoCalendario;
+    const effLocalSeleccionado = model?.localSeleccionado ?? localSeleccionado;
+    const effSetLocalSeleccionado =
+      model?.setLocalSeleccionado ?? setLocalSeleccionado;
+    const effLocalesConfig = model?.localesConfig ?? localesConfig;
+    const effSearchTerm = model?.searchTerm ?? searchTerm;
+    const effSetSearchTerm = model?.setSearchTerm ?? setSearchTerm;
+    const effAbcFilter = model?.abcFilter ?? abcFilter;
+    const effSetAbcFilter = model?.setAbcFilter ?? setAbcFilter;
+    const effHayDatos = model?.reporteData
+      ? model.reporteData.length > 0
+      : hayDatos;
+
     useEffect(() => {
       const handleClickOutside = (event) => {
         if (
@@ -43,27 +73,107 @@ const ExistenciasCostosToolbar = React.memo(
     }, []);
 
     const handleCheckboxChange = (codigoLocal) => {
-      if (localSeleccionado.includes(codigoLocal)) {
-        setLocalSeleccionado(
-          localSeleccionado.filter((id) => id !== codigoLocal),
+      if (effLocalSeleccionado.includes(codigoLocal)) {
+        effSetLocalSeleccionado(
+          effLocalSeleccionado.filter((id) => id !== codigoLocal),
         );
       } else {
-        setLocalSeleccionado([...localSeleccionado, codigoLocal]);
+        effSetLocalSeleccionado([...effLocalSeleccionado, codigoLocal]);
       }
     };
 
+    const handleAgregarLapso = (e) => {
+      const valor = e.target.value;
+      if (!valor) return;
+      if (!effLapsosSeleccionados.includes(valor)) {
+        effSetLapsosSeleccionados([...effLapsosSeleccionados, valor]);
+      }
+      setMesInput("");
+    };
+
+    const handleRemoverLapso = (lapsoABorrar) => {
+      effSetLapsosSeleccionados(
+        effLapsosSeleccionados.filter((lapso) => lapso !== lapsoABorrar),
+      );
+    };
+
     const getDropdownLabel = () => {
-      if (localSeleccionado.length === 0) {
+      if (effLocalSeleccionado.length === 0) {
         return "TODAS LAS BODEGAS PARAMETRIZADAS";
       }
-      if (localSeleccionado.length === localesConfig.length) {
+      if (effLocalSeleccionado.length === effLocalesConfig.length) {
         return "TODAS LAS BODEGAS SELECCIONADAS";
       }
-      return `${localSeleccionado.length} BODEGAS SELECCIONADAS`;
+      return `${effLocalSeleccionado.length} BODEGAS SELECCIONADAS`;
     };
 
     return (
       <div className={styles.tarjetaFiltros}>
+        {/* Conmutador de Modalidad de Consulta */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "20px",
+            marginBottom: "16px",
+            paddingBottom: "12px",
+            borderBottom: "1px solid #e5e5ea",
+            width: "100%",
+          }}
+        >
+          <span
+            style={{
+              fontSize: "0.82rem",
+              fontWeight: "700",
+              color: "#1d1d1f",
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+            }}
+          >
+            Modo de Consulta:
+          </span>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              cursor: "pointer",
+              fontSize: "0.85rem",
+              fontWeight: "600",
+              color: !effEsMultiLapso ? "#009b6d" : "#515154",
+            }}
+          >
+            <input
+              type="radio"
+              name="modoConsulta"
+              checked={!effEsMultiLapso}
+              onChange={() => effSetEsMultiLapso(false)}
+              style={{ accentColor: "#009b6d", cursor: "pointer" }}
+            />
+            Un Solo Mes
+          </label>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              cursor: "pointer",
+              fontSize: "0.85rem",
+              fontWeight: "600",
+              color: effEsMultiLapso ? "#009b6d" : "#515154",
+            }}
+          >
+            <input
+              type="radio"
+              name="modoConsulta"
+              checked={effEsMultiLapso}
+              onChange={() => effSetEsMultiLapso(true)}
+              style={{ accentColor: "#009b6d", cursor: "pointer" }}
+            />
+            Varios Meses (Consolidado)
+          </label>
+        </div>
+
         <form
           onSubmit={onConsultar}
           style={{
@@ -73,32 +183,56 @@ const ExistenciasCostosToolbar = React.memo(
             flexWrap: "wrap",
           }}
         >
-          {/* Filtro de Periodo */}
-          <div className={styles.controlFormulario}>
-            <div className={styles.campoFlotante}>
-              <input
-                type="month"
-                value={lapsoCalendario}
-                onChange={(e) => setLapsoCalendario(e.target.value)}
-                required
-              />
-              <label className={lapsoCalendario ? styles.labelColapsado : ""}>
-                <FontAwesomeIcon
-                  icon={faCalendarAlt}
-                  style={{ marginRight: "6px" }}
-                />{" "}
-                Periodo de Analisis
-              </label>
+          {/* Selector Unico de Mes */}
+          {!effEsMultiLapso ? (
+            <div className={styles.controlFormulario}>
+              <div className={styles.campoFlotante}>
+                <input
+                  type="month"
+                  value={effLapsoCalendario}
+                  onChange={(e) => effSetLapsoCalendario(e.target.value)}
+                  required
+                />
+                <label
+                  className={effLapsoCalendario ? styles.labelColapsado : ""}
+                >
+                  <FontAwesomeIcon
+                    icon={faCalendarAlt}
+                    style={{ marginRight: "6px" }}
+                  />
+                  Periodo de Analisis
+                </label>
+              </div>
             </div>
-          </div>
+          ) : (
+            /* Selector Multiple / Intermitente de Meses */
+            <div
+              className={styles.controlFormulario}
+              style={{ minWidth: "300px" }}
+            >
+              <div className={styles.campoFlotante}>
+                <input
+                  type="month"
+                  value={mesInput}
+                  onChange={handleAgregarLapso}
+                />
+                <label className={styles.labelColapsado}>
+                  <FontAwesomeIcon
+                    icon={faLayerGroup}
+                    style={{ marginRight: "6px" }}
+                  />
+                  Seleccionar Meses para Consolidar
+                </label>
+              </div>
+            </div>
+          )}
 
-          {/* Selector Multiple de Sedes / Locales */}
+          {/* Selector Multiple de Bodegas / Locales */}
           <div
             className={styles.controlFormulario}
             ref={dropdownRef}
             style={{ position: "relative" }}
           >
-            {/* Contenedor del disparador flotante */}
             <div className={styles.campoFlotante}>
               <div
                 onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -114,7 +248,7 @@ const ExistenciasCostosToolbar = React.memo(
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "space-between", // Corregido: space-between para distribuir elementos
+                  justifyContent: "space-between",
                   boxSizing: "border-box",
                   whiteSpace: "nowrap",
                   overflow: "hidden",
@@ -144,12 +278,11 @@ const ExistenciasCostosToolbar = React.memo(
                 <FontAwesomeIcon
                   icon={faStore}
                   style={{ marginRight: "6px" }}
-                />{" "}
+                />
                 Sede / Local
               </label>
-            </div>{" "}
-            {/* Fin de campoFlotante */}
-            {/* Menu Flotante Desplegable (Desplazado fuera de campoFlotante) */}
+            </div>
+
             {dropdownOpen && (
               <div
                 style={{
@@ -167,7 +300,7 @@ const ExistenciasCostosToolbar = React.memo(
                 }}
               >
                 <div
-                  onClick={() => setLocalSeleccionado([])}
+                  onClick={() => effSetLocalSeleccionado([])}
                   style={{
                     padding: "8px 12px",
                     fontSize: "0.82rem",
@@ -176,15 +309,15 @@ const ExistenciasCostosToolbar = React.memo(
                     color: "#009b6d",
                     borderBottom: "1px solid #f5f5f7",
                     backgroundColor:
-                      localSeleccionado.length === 0
+                      effLocalSeleccionado.length === 0
                         ? "#f5f5f7"
                         : "transparent",
                   }}
                 >
                   -- LIMPIAR SELECCION (TODAS) --
                 </div>
-                {localesConfig.map((loc) => {
-                  const estaSeleccionado = localSeleccionado.includes(
+                {effLocalesConfig.map((loc) => {
+                  const estaSeleccionado = effLocalSeleccionado.includes(
                     loc.codigo_local,
                   );
                   return (
@@ -198,7 +331,6 @@ const ExistenciasCostosToolbar = React.memo(
                         margin: 0,
                         cursor: "pointer",
                         fontSize: "0.82rem",
-                        transition: "background 0.1s ease",
                         backgroundColor: estaSeleccionado
                           ? "#f2f9f6"
                           : "transparent",
@@ -226,7 +358,7 @@ const ExistenciasCostosToolbar = React.memo(
                       <span
                         style={{
                           color: estaSeleccionado ? "#1d1d1f" : "#515154",
-                          userSelect: "none", // Evita la seleccion de texto incomoda en doble click rapido
+                          userSelect: "none",
                         }}
                       >
                         {loc.descripcion} <strong>({loc.codigo_local})</strong>
@@ -237,57 +369,137 @@ const ExistenciasCostosToolbar = React.memo(
               </div>
             )}
           </div>
-          {/* Fin de controlFormulario */}
 
           <button type="submit" className={styles.btnBuscarDatos}>
             <FontAwesomeIcon icon={faSearch} /> Consultar
           </button>
         </form>
 
-        {/* --- CONTROLES DE BUSQUEDA Y SEGMENTACION --- */}
-        {hayDatos && (
+        {/* Visor de chips de periodos seleccionados en multi-lapso */}
+        {effEsMultiLapso && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "8px",
+              marginTop: "12px",
+              paddingTop: "10px",
+              borderTop: "1px dashed #e5e5ea",
+            }}
+          >
+            <span
+              style={{
+                fontSize: "0.78rem",
+                fontWeight: "600",
+                color: "#6e6e73",
+              }}
+            >
+              Meses en consulta ({effLapsosSeleccionados.length}):
+            </span>
+            {effLapsosSeleccionados.length === 0 ? (
+              <span
+                style={{ fontSize: "0.78rem", color: "#86868b", italic: true }}
+              >
+                Seleccione uno o mas meses en el control de arriba
+              </span>
+            ) : (
+              effLapsosSeleccionados.map((lap) => (
+                <span
+                  key={lap}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    backgroundColor: "#e8f5e9",
+                    color: "#009b6d",
+                    padding: "4px 10px",
+                    borderRadius: "16px",
+                    fontSize: "0.8rem",
+                    fontWeight: "600",
+                    border: "1px solid #c8e6c9",
+                  }}
+                >
+                  {lap}
+                  <FontAwesomeIcon
+                    icon={faTimes}
+                    onClick={() => handleRemoverLapso(lap)}
+                    style={{
+                      cursor: "pointer",
+                      fontSize: "0.75rem",
+                      color: "#2e7d32",
+                    }}
+                  />
+                </span>
+              ))
+            )}
+            {effLapsosSeleccionados.length > 0 && (
+              <button
+                type="button"
+                onClick={() => effSetLapsosSeleccionados([])}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#d32f2f",
+                  fontSize: "0.75rem",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  marginLeft: "auto",
+                }}
+              >
+                Limpiar todo
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Subpanel de busqueda y filtrado dinámico */}
+        {effHayDatos && (
           <div className={styles.subPanelFiltros}>
             <div className={styles.controlFormulario}>
               <div className={styles.campoFlotante}>
                 <input
                   type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  value={effSearchTerm}
+                  onChange={(e) => effSetSearchTerm(e.target.value)}
                   placeholder="Buscar por item, descripcion, proveedor..."
                 />
-                <label className={searchTerm ? styles.labelColapsado : ""}>
+                <label className={effSearchTerm ? styles.labelColapsado : ""}>
                   <FontAwesomeIcon
                     icon={faFont}
                     style={{ marginRight: "6px" }}
-                  />{" "}
+                  />
                   Busqueda Global
                 </label>
               </div>
             </div>
 
-            <div
-              className={styles.controlFormulario}
-              style={{ maxWidth: "220px" }}
-            >
-              <div className={styles.campoFlotante}>
-                <select
-                  value={abcFilter}
-                  onChange={(e) => setAbcFilter(e.target.value)}
-                >
-                  <option value="">Todos los cuadrantes</option>
-                  <option value="A">Clasificacion A (80% Rotacion)</option>
-                  <option value="B">Clasificacion B (15% Rotacion)</option>
-                  <option value="C">Clasificacion C (5% Rotacion)</option>
-                </select>
-                <label className={styles.labelColapsado}>
-                  <FontAwesomeIcon
-                    icon={faFilter}
-                    style={{ marginRight: "6px" }}
-                  />{" "}
-                  Filtrar ABC
-                </label>
+            {!effEsMultiLapso && (
+              <div
+                className={styles.controlFormulario}
+                style={{ maxWidth: "220px" }}
+              >
+                <div className={styles.campoFlotante}>
+                  <select
+                    value={effAbcFilter}
+                    onChange={(e) => effSetAbcFilter(e.target.value)}
+                  >
+                    <option value="">Todos los cuadrantes</option>
+                    <option value="A">Clasificacion A (80% Rotacion)</option>
+                    <option value="B">Clasificacion B (15% Rotacion)</option>
+                    <option value="C">Clasificacion C (5% Rotacion)</option>
+                  </select>
+                  <label className={styles.labelColapsado}>
+                    <FontAwesomeIcon
+                      icon={faFilter}
+                      style={{ marginRight: "6px" }}
+                    />
+                    Filtrar ABC
+                  </label>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>

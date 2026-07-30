@@ -4,22 +4,30 @@ import { EXCEL_PALETTE } from "./constants";
 import logoImage from "../../../../../assets/images/logo.png";
 
 /**
- * Genera y descarga el reporte analitico con el branding y estandares de la organizacion.
- * Remueve inconsistencias de tipos y corrige la definicion de la vista de paneles.
+ * Genera y descarga el reporte analitico en Excel soportando
+ * tanto el modo de mes unico (26 cols) como multi-lapso consolidado (12 cols).
  */
 export const exportarExistenciasCostosExcel = async (
   reporteData,
-  lapsoCalendario,
+  etiquetaPeriodo,
+  esMultiLapso = false,
 ) => {
   if (!reporteData || reporteData.length === 0) return false;
+
+  // Deteccion defensiva de estructura reducida multi-lapso
+  const esReducido =
+    esMultiLapso ||
+    (reporteData.length > 0 &&
+      reporteData[0].precio_venta === undefined &&
+      reporteData[0].costo_final === undefined);
 
   const libro = new ExcelJS.Workbook();
   const hoja = libro.addWorksheet("Existencias y Costos");
 
-  const totalColumnas = 26;
+  const totalColumnas = esReducido ? 12 : 26;
   const fechaActualStr = new Date().toLocaleDateString("es-CO");
 
-  const columnas = [
+  const columnasCompleta = [
     "Sede",
     "Local",
     "Grupo 1",
@@ -48,39 +56,71 @@ export const exportarExistenciasCostosExcel = async (
     "Clasificacion ABC",
   ];
 
+  const columnasReducida = [
+    "Sede",
+    "Local",
+    "Grupo 1",
+    "Linea 1",
+    "Linea 2",
+    "Linea 3",
+    "Criterio",
+    "Item",
+    "Descripcion",
+    "Proveedor",
+    "Cantidad Vendida",
+    "Valor Venta",
+  ];
+
+  const columnas = esReducido ? columnasReducida : columnasCompleta;
+
   // ---------- 1. ESCANER DINAMICO DE ANCHOS DE COLUMNA ----------
   const columnasConfiguradas = columnas.map((col, i) => {
     let longitudMaxima = col.length;
 
     reporteData.forEach((item) => {
-      const valoresFila = [
-        item.sede,
-        item.local,
-        item.grupo1,
-        item.linea1,
-        item.linea2,
-        item.linea3,
-        item.criterio,
-        item.item,
-        item.descripcion,
-        item.proveedor,
-        item.fecha_ultima_compra,
-        item.precio_venta,
-        item.existencia_final,
-        item.costo_final,
-        item.cantidad_vendida,
-        item.valor_ventas,
-        item.cantidad_vendida_mes_anterior,
-        item.valor_ventas_mes_anterior,
-        item.cantidad_vendida_ayer,
-        item.valor_ventas_ayer,
-        item.cantidad_promedio_4m,
-        item.valor_promedio_4m,
-        item.consumo_promedio,
-        item.dias_promedio,
-        item.valor_exceso,
-        item.clasificacion_abc,
-      ];
+      const valoresFila = esReducido
+        ? [
+            item.sede,
+            item.local,
+            item.grupo1,
+            item.linea1,
+            item.linea2,
+            item.linea3,
+            item.criterio,
+            item.item,
+            item.descripcion,
+            item.proveedor,
+            item.cantidad_vendida,
+            item.valor_ventas,
+          ]
+        : [
+            item.sede,
+            item.local,
+            item.grupo1,
+            item.linea1,
+            item.linea2,
+            item.linea3,
+            item.criterio,
+            item.item,
+            item.descripcion,
+            item.proveedor,
+            item.fecha_ultima_compra,
+            item.precio_venta,
+            item.existencia_final,
+            item.costo_final,
+            item.cantidad_vendida,
+            item.valor_ventas,
+            item.cantidad_vendida_mes_anterior,
+            item.valor_ventas_mes_anterior,
+            item.cantidad_vendida_ayer,
+            item.valor_ventas_ayer,
+            item.cantidad_promedio_4m,
+            item.valor_promedio_4m,
+            item.consumo_promedio,
+            item.dias_promedio,
+            item.valor_exceso,
+            item.clasificacion_abc,
+          ];
 
       const valorStr =
         valoresFila[i] !== undefined && valoresFila[i] !== null
@@ -100,7 +140,7 @@ export const exportarExistenciasCostosExcel = async (
     hoja.getColumn(index + 1).width = colCfg.width;
   });
 
-  // ---------- 2. DIMENSIONES Y ESTILOS DEL BANNER CORPORATIVO ----------
+  // ---------- 2. ESTILOS DEL BANNER CORPORATIVO ----------
   hoja.getRow(1).height = 25;
   hoja.getRow(2).height = 20;
   hoja.getRow(3).height = 20;
@@ -123,7 +163,7 @@ export const exportarExistenciasCostosExcel = async (
     }
   }
 
-  // ---------- 3. LOGO CON ESCALA REDUCIDA A 0.7 ----------
+  // ---------- 3. LOGO INSTITUCIONAL ----------
   const factorEscala = 0.7;
   const anchoColumnaA = hoja.getColumn(1).width || 15;
   const anchoColumnaB = hoja.getColumn(2).width || 15;
@@ -168,7 +208,7 @@ export const exportarExistenciasCostosExcel = async (
     console.error("No se logro cargar el logotipo institucional:", error);
   }
 
-  // ---------- 4. INYECCION DE TEXTOS DE ENCABEZADO METADATA ----------
+  // ---------- 4. ENCABEZADO METADATA ----------
   const colInicioTexto = rangoFinLogoCol + 1;
   for (let i = 1; i <= 4; i++) {
     if (colInicioTexto < totalColumnas) {
@@ -187,7 +227,9 @@ export const exportarExistenciasCostosExcel = async (
   cellTitulo.alignment = { vertical: "middle", horizontal: "left" };
 
   const cellSubtitulo = hoja.getCell(2, colInicioTexto);
-  cellSubtitulo.value = "REPORTE GLOBAL DE EXISTENCIAS Y COSTOS";
+  cellSubtitulo.value = esReducido
+    ? "REPORTE CONSOLIDADO MULTI-PERIODO DE VENTAS Y EXISTENCIAS"
+    : "REPORTE GLOBAL DE EXISTENCIAS Y COSTOS";
   cellSubtitulo.font = {
     name: "Arial",
     size: 11,
@@ -197,7 +239,9 @@ export const exportarExistenciasCostosExcel = async (
   cellSubtitulo.alignment = { vertical: "middle", horizontal: "left" };
 
   const cellDoc = hoja.getCell(3, colInicioTexto);
-  cellDoc.value = `Documento: Balance Analitico ABC | Periodo: ${lapsoCalendario}`;
+  cellDoc.value = `Documento: ${
+    esReducido ? "Consolidado Multi-Lapso" : "Balance Analitico ABC"
+  } | Periodos: ${etiquetaPeriodo}`;
   cellDoc.font = {
     name: "Arial",
     size: 10.5,
@@ -216,7 +260,7 @@ export const exportarExistenciasCostosExcel = async (
   };
   cellFechas.alignment = { vertical: "middle", horizontal: "left" };
 
-  // ---------- 5. FILA 6: ENCABEZADOS DE LA MATRIZ DE DATOS ----------
+  // ---------- 5. ENCABEZADOS DE LA TABLA (FILA 6) ----------
   const filaEncabezados = hoja.getRow(6);
   filaEncabezados.values = columnas;
   filaEncabezados.height = 28;
@@ -259,35 +303,51 @@ export const exportarExistenciasCostosExcel = async (
   };
 
   reporteData.forEach((item) => {
-    const nuevaFila = hoja.addRow([
-      item.sede,
-      item.local,
-      item.grupo1,
-      item.linea1,
-      item.linea2,
-      item.linea3,
-      item.criterio,
-      item.item,
-      item.descripcion,
-      item.proveedor,
-      item.fecha_ultima_compra,
-      Number(item.precio_venta || 0),
-      Number(item.existencia_final || 0),
-      Number(item.costo_final || 0),
-      Number(item.cantidad_vendida || 0),
-      Number(item.valor_ventas || 0),
-      Number(item.cantidad_vendida_mes_anterior || 0),
-      Number(item.valor_ventas_mes_anterior || 0),
-      Number(item.cantidad_vendida_ayer || 0),
-      Number(item.valor_ventas_ayer || 0),
-      Number(item.cantidad_promedio_4m || 0),
-      Number(item.valor_promedio_4m || 0),
-      Number(item.consumo_promedio || 0),
-      Number(item.dias_promedio || 0),
-      Number(item.valor_exceso || 0),
-      item.clasificacion_abc,
-    ]);
+    const valoresFila = esReducido
+      ? [
+          item.sede,
+          item.local,
+          item.grupo1,
+          item.linea1,
+          item.linea2,
+          item.linea3,
+          item.criterio,
+          item.item,
+          item.descripcion,
+          item.proveedor,
+          Number(item.cantidad_vendida || 0),
+          Number(item.valor_ventas || 0),
+        ]
+      : [
+          item.sede,
+          item.local,
+          item.grupo1,
+          item.linea1,
+          item.linea2,
+          item.linea3,
+          item.criterio,
+          item.item,
+          item.descripcion,
+          item.proveedor,
+          item.fecha_ultima_compra,
+          Number(item.precio_venta || 0),
+          Number(item.existencia_final || 0),
+          Number(item.costo_final || 0),
+          Number(item.cantidad_vendida || 0),
+          Number(item.valor_ventas || 0),
+          Number(item.cantidad_vendida_mes_anterior || 0),
+          Number(item.valor_ventas_mes_anterior || 0),
+          Number(item.cantidad_vendida_ayer || 0),
+          Number(item.valor_ventas_ayer || 0),
+          Number(item.cantidad_promedio_4m || 0),
+          Number(item.valor_promedio_4m || 0),
+          Number(item.consumo_promedio || 0),
+          Number(item.dias_promedio || 0),
+          Number(item.valor_exceso || 0),
+          item.clasificacion_abc,
+        ];
 
+    const nuevaFila = hoja.addRow(valoresFila);
     nuevaFila.height = 20;
 
     nuevaFila.eachCell((celda) => {
@@ -296,38 +356,55 @@ export const exportarExistenciasCostosExcel = async (
       celda.alignment = estiloCellCuerpo.alignment;
     });
 
-    [1, 2, 4, 5, 6, 7, 8, 11, 26].forEach((colIdx) => {
-      nuevaFila.getCell(colIdx).alignment = {
-        horizontal: "center",
-        vertical: "middle",
-      };
-    });
+    if (esReducido) {
+      [1, 2, 4, 5, 6, 7, 8].forEach((colIdx) => {
+        nuevaFila.getCell(colIdx).alignment = {
+          horizontal: "center",
+          vertical: "middle",
+        };
+      });
 
-    const colsMoneda = [12, 14, 16, 18, 20, 22, 25];
-    const colsEnteros = [13, 15, 17, 19, 21, 23, 24];
+      const cellCant = nuevaFila.getCell(11);
+      cellCant.numFmt = "#,##0.00";
+      cellCant.alignment = { horizontal: "right", vertical: "middle" };
 
-    colsMoneda.forEach((c) => {
-      const cell = nuevaFila.getCell(c);
-      cell.numFmt = "$#,##0.00";
-      cell.alignment = { horizontal: "right", vertical: "middle" };
-    });
+      const cellVlr = nuevaFila.getCell(12);
+      cellVlr.numFmt = "$#,##0.00";
+      cellVlr.alignment = { horizontal: "right", vertical: "middle" };
+    } else {
+      [1, 2, 4, 5, 6, 7, 8, 11, 26].forEach((colIdx) => {
+        nuevaFila.getCell(colIdx).alignment = {
+          horizontal: "center",
+          vertical: "middle",
+        };
+      });
 
-    colsEnteros.forEach((c) => {
-      const cell = nuevaFila.getCell(c);
-      cell.numFmt = "#,##0.00";
-      cell.alignment = { horizontal: "right", vertical: "middle" };
-    });
+      const colsMoneda = [12, 14, 16, 18, 20, 22, 25];
+      const colsEnteros = [13, 15, 17, 19, 21, 23, 24];
 
-    if (Number(item.valor_exceso || 0) > 0) {
-      nuevaFila.getCell(25).fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: EXCEL_PALETTE.EXCESS_ALERT || "FFFDE2E2" },
-      };
+      colsMoneda.forEach((c) => {
+        const cell = nuevaFila.getCell(c);
+        cell.numFmt = "$#,##0.00";
+        cell.alignment = { horizontal: "right", vertical: "middle" };
+      });
+
+      colsEnteros.forEach((c) => {
+        const cell = nuevaFila.getCell(c);
+        cell.numFmt = "#,##0.00";
+        cell.alignment = { horizontal: "right", vertical: "middle" };
+      });
+
+      if (Number(item.valor_exceso || 0) > 0) {
+        nuevaFila.getCell(25).fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: EXCEL_PALETTE.EXCESS_ALERT || "FFFDE2E2" },
+        };
+      }
     }
   });
 
-  // ---------- 7. AUTO-FILTROS Y CONFIGURACION DE VISTA ----------
+  // ---------- 7. AUTO-FILTROS Y CONGELAMIENTO DE PANELES ----------
   if (!hoja.empty) {
     hoja.autoFilter = {
       from: { row: 6, column: 1 },
@@ -351,6 +428,10 @@ export const exportarExistenciasCostosExcel = async (
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
 
-  saveAs(blob, `existencias_costos_${lapsoCalendario.replace("-", "")}.xlsx`);
+  const nombreArchivo = esReducido
+    ? `existencias_costos_multilapso_${fechaActualStr.replace(/\//g, "")}.xlsx`
+    : `existencias_costos_${String(etiquetaPeriodo).replace("-", "")}.xlsx`;
+
+  saveAs(blob, nombreArchivo);
   return true;
 };

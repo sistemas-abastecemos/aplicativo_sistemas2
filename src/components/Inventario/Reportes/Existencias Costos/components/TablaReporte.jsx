@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import styles from "../ExistenciasCostos.module.css";
 import EmptyState from "../../../../UI/EmptyState";
 import {
@@ -24,6 +24,17 @@ const TablaReporte = React.memo(({ model }) => {
     sortConfig,
     handleSort,
   } = model;
+
+  // Deteccion automatica de reporte reducido (Multi-Lapso)
+  const esReducido = useMemo(() => {
+    if (model?.esMultiLapso) return true;
+    if (!model?.reporteData || model.reporteData.length === 0) return false;
+    const primerRegistro = model.reporteData[0];
+    return (
+      primerRegistro.precio_venta === undefined &&
+      primerRegistro.costo_final === undefined
+    );
+  }, [model?.esMultiLapso, model?.reporteData]);
 
   if (!model.reporteData || model.reporteData.length === 0) {
     return (
@@ -85,7 +96,6 @@ const TablaReporte = React.memo(({ model }) => {
                 zIndex: 10,
               }}
             >
-              {/* --- BLOQUE 1: JERARQUIAS Y MAESTROS --- */}
               <th
                 onClick={() => handleSort("sede")}
                 className={styles.thSortable}
@@ -146,115 +156,131 @@ const TablaReporte = React.memo(({ model }) => {
               >
                 Proveedor {renderSortIcon("proveedor")}
               </th>
-              <th
-                onClick={() => handleSort("fecha_ultima_compra")}
-                className={styles.thSortable}
-              >
-                Ult. Compra {renderSortIcon("fecha_ultima_compra")}
-              </th>
 
-              {/* --- BLOQUE 2: SALDOS Y PRECIOS --- */}
-              <th
-                onClick={() => handleSort("precio_venta")}
-                className={`${styles.numeroAlineado} ${styles.thSortable}`}
-              >
-                Precio Venta {renderSortIcon("precio_venta")}
-              </th>
-              <th
-                onClick={() => handleSort("existencia_final")}
-                className={`${styles.numeroAlineado} ${styles.thSortable}`}
-              >
-                Exist. Final {renderSortIcon("existencia_final")}
-              </th>
-              <th
-                onClick={() => handleSort("costo_final")}
-                className={`${styles.numeroAlineado} ${styles.thSortable}`}
-              >
-                Costo Final {renderSortIcon("costo_final")}
-              </th>
-
-              {/* --- BLOQUE 3: VENTAS HISTORICAS TRAZABLES --- */}
-              <th
-                onClick={() => handleSort("cantidad_vendida_ayer")}
-                className={`${styles.numeroAlineado} ${styles.thSortable}`}
-              >
-                Cant. Ayer {renderSortIcon("cantidad_vendida_ayer")}
-              </th>
-              <th
-                onClick={() => handleSort("valor_ventas_ayer")}
-                className={`${styles.numeroAlineado} ${styles.thSortable}`}
-              >
-                Vlr. Ayer {renderSortIcon("valor_ventas_ayer")}
-              </th>
-              <th
-                onClick={() => handleSort("cantidad_vendida")}
-                className={`${styles.numeroAlineado} ${styles.thSortable}`}
-              >
-                Cant. Mes {renderSortIcon("cantidad_vendida")}
-              </th>
-              <th
-                onClick={() => handleSort("valor_ventas")}
-                className={`${styles.numeroAlineado} ${styles.thSortable}`}
-              >
-                Vlr. Mes {renderSortIcon("valor_ventas")}
-              </th>
-              <th
-                onClick={() => handleSort("cantidad_vendida_mes_anterior")}
-                className={`${styles.numeroAlineado} ${styles.thSortable}`}
-              >
-                Cant. Mes Ant. {renderSortIcon("cantidad_vendida_mes_anterior")}
-              </th>
-              <th
-                onClick={() => handleSort("valor_ventas_mes_anterior")}
-                className={`${styles.numeroAlineado} ${styles.thSortable}`}
-              >
-                Vlr. Mes Ant. {renderSortIcon("valor_ventas_mes_anterior")}
-              </th>
-              <th
-                onClick={() => handleSort("cantidad_promedio_4m")}
-                className={`${styles.numeroAlineado} ${styles.thSortable}`}
-              >
-                Cant. Prom 4M {renderSortIcon("cantidad_promedio_4m")}
-              </th>
-              <th
-                onClick={() => handleSort("valor_promedio_4m")}
-                className={`${styles.numeroAlineado} ${styles.thSortable}`}
-              >
-                Vlr. Prom 4M {renderSortIcon("valor_promedio_4m")}
-              </th>
-
-              {/* --- BLOQUE 4: PARAMETROS ANALITICOS --- */}
-              <th
-                onClick={() => handleSort("consumo_promedio")}
-                className={`${styles.numeroAlineado} ${styles.thSortable}`}
-              >
-                Consumo Prom. {renderSortIcon("consumo_promedio")}
-              </th>
-              <th
-                onClick={() => handleSort("dias_promedio")}
-                className={`${styles.numeroAlineado} ${styles.thSortable}`}
-              >
-                Dias Inv. {renderSortIcon("dias_promedio")}
-              </th>
-              <th
-                onClick={() => handleSort("valor_exceso")}
-                className={`${styles.numeroAlineado} ${styles.thSortable}`}
-              >
-                Valor Exceso {renderSortIcon("valor_exceso")}
-              </th>
-              <th
-                onClick={() => handleSort("clasificacion_abc")}
-                className={styles.thSortable}
-                style={{ textAlign: "center" }}
-              >
-                ABC {renderSortIcon("clasificacion_abc")}
-              </th>
+              {esReducido ? (
+                /* Columnas Exclusivas para Reporte Multi-Lapso */
+                <>
+                  <th
+                    onClick={() => handleSort("cantidad_vendida")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Cant. Vendida {renderSortIcon("cantidad_vendida")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("valor_ventas")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Valor Ventas {renderSortIcon("valor_ventas")}
+                  </th>
+                </>
+              ) : (
+                /* Columnas Completas de Reporte Mes Unico */
+                <>
+                  <th
+                    onClick={() => handleSort("fecha_ultima_compra")}
+                    className={styles.thSortable}
+                  >
+                    Ult. Compra {renderSortIcon("fecha_ultima_compra")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("precio_venta")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Precio Venta {renderSortIcon("precio_venta")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("existencia_final")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Exist. Final {renderSortIcon("existencia_final")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("costo_final")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Costo Final {renderSortIcon("costo_final")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("cantidad_vendida_ayer")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Cant. Ayer {renderSortIcon("cantidad_vendida_ayer")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("valor_ventas_ayer")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Vlr. Ayer {renderSortIcon("valor_ventas_ayer")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("cantidad_vendida")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Cant. Mes {renderSortIcon("cantidad_vendida")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("valor_ventas")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Vlr. Mes {renderSortIcon("valor_ventas")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("cantidad_vendida_mes_anterior")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Cant. Mes Ant.{" "}
+                    {renderSortIcon("cantidad_vendida_mes_anterior")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("valor_ventas_mes_anterior")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Vlr. Mes Ant. {renderSortIcon("valor_ventas_mes_anterior")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("cantidad_promedio_4m")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Cant. Prom 4M {renderSortIcon("cantidad_promedio_4m")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("valor_promedio_4m")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Vlr. Prom 4M {renderSortIcon("valor_promedio_4m")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("consumo_promedio")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Consumo Prom. {renderSortIcon("consumo_promedio")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("dias_promedio")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Dias Inv. {renderSortIcon("dias_promedio")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("valor_exceso")}
+                    className={`${styles.numeroAlineado} ${styles.thSortable}`}
+                  >
+                    Valor Exceso {renderSortIcon("valor_exceso")}
+                  </th>
+                  <th
+                    onClick={() => handleSort("clasificacion_abc")}
+                    className={styles.thSortable}
+                    style={{ textAlign: "center" }}
+                  >
+                    ABC {renderSortIcon("clasificacion_abc")}
+                  </th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
             {dataPaginada.map((item, idx) => (
               <tr key={`${item.item}-${item.local}-${idx}`}>
-                {/* Maestros */}
                 <td>{item.sede}</td>
                 <td>{item.local}</td>
                 <td style={{ whiteSpace: "nowrap" }}>{item.grupo1}</td>
@@ -265,100 +291,142 @@ const TablaReporte = React.memo(({ model }) => {
                 <td style={{ fontWeight: "600" }}>{item.item}</td>
                 <td style={{ minWidth: "220px" }}>{item.descripcion}</td>
                 <td style={{ whiteSpace: "nowrap" }}>{item.proveedor}</td>
-                <td>{formatFecha(item.fecha_ultima_compra)}</td>
 
-                {/* Saldos */}
-                <td className={styles.numeroAlineado}>
-                  $
-                  {item.precio_venta.toLocaleString("es-CO", {
-                    minimumFractionDigits: 2,
-                  })}
-                </td>
-                <td className={styles.numeroAlineado}>
-                  {item.existencia_final.toLocaleString("es-CO")}
-                </td>
-                <td className={styles.numeroAlineado}>
-                  $
-                  {item.costo_final.toLocaleString("es-CO", {
-                    minimumFractionDigits: 2,
-                  })}
-                </td>
-
-                {/* Ventas */}
-                <td className={styles.numeroAlineado}>
-                  {item.cantidad_vendida_ayer.toLocaleString("es-CO")}
-                </td>
-                <td className={styles.numeroAlineado}>
-                  $
-                  {item.valor_ventas_ayer.toLocaleString("es-CO", {
-                    minimumFractionDigits: 2,
-                  })}
-                </td>
-                <td className={styles.numeroAlineado}>
-                  {item.cantidad_vendida.toLocaleString("es-CO")}
-                </td>
-                <td className={styles.numeroAlineado}>
-                  $
-                  {item.valor_ventas.toLocaleString("es-CO", {
-                    minimumFractionDigits: 2,
-                  })}
-                </td>
-                <td className={styles.numeroAlineado}>
-                  {item.cantidad_vendida_mes_anterior.toLocaleString("es-CO")}
-                </td>
-                <td className={styles.numeroAlineado}>
-                  $
-                  {item.valor_ventas_mes_anterior.toLocaleString("es-CO", {
-                    minimumFractionDigits: 2,
-                  })}
-                </td>
-                <td className={styles.numeroAlineado}>
-                  {item.cantidad_promedio_4m.toLocaleString("es-CO", {
-                    maximumFractionDigits: 2,
-                  })}
-                </td>
-                <td className={styles.numeroAlineado}>
-                  $
-                  {item.valor_promedio_4m.toLocaleString("es-CO", {
-                    minimumFractionDigits: 2,
-                  })}
-                </td>
-
-                {/* Analitica */}
-                <td className={styles.numeroAlineado}>
-                  {item.consumo_promedio.toLocaleString("es-CO", {
-                    maximumFractionDigits: 2,
-                  })}
-                </td>
-                <td
-                  className={styles.numeroAlineado}
-                  style={{ fontWeight: "600" }}
-                >
-                  {Math.round(item.dias_promedio)} d
-                </td>
-                <td
-                  className={styles.numeroAlineado}
-                  style={{
-                    color: item.valor_exceso > 0 ? "#b91c1c" : "inherit",
-                  }}
-                >
-                  $
-                  {item.valor_exceso.toLocaleString("es-CO", {
-                    minimumFractionDigits: 2,
-                  })}
-                </td>
-                <td style={{ textAlign: "center" }}>
-                  <span className={getAbcBadge(item.clasificacion_abc)}>
-                    {item.clasificacion_abc}
-                  </span>
-                </td>
+                {esReducido ? (
+                  /* Celda Multi-Lapso: Solo Cantidad y Valor Ventas */
+                  <>
+                    <td className={styles.numeroAlineado}>
+                      {Number(item.cantidad_vendida || 0).toLocaleString(
+                        "es-CO",
+                        {
+                          maximumFractionDigits: 2,
+                        },
+                      )}
+                    </td>
+                    <td className={styles.numeroAlineado}>
+                      $
+                      {Number(item.valor_ventas || 0).toLocaleString("es-CO", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </td>
+                  </>
+                ) : (
+                  /* Celdas Completas Mes Unico */
+                  <>
+                    <td>{formatFecha(item.fecha_ultima_compra)}</td>
+                    <td className={styles.numeroAlineado}>
+                      $
+                      {Number(item.precio_venta || 0).toLocaleString("es-CO", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </td>
+                    <td className={styles.numeroAlineado}>
+                      {Number(item.existencia_final || 0).toLocaleString(
+                        "es-CO",
+                      )}
+                    </td>
+                    <td className={styles.numeroAlineado}>
+                      $
+                      {Number(item.costo_final || 0).toLocaleString("es-CO", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </td>
+                    <td className={styles.numeroAlineado}>
+                      {Number(item.cantidad_vendida_ayer || 0).toLocaleString(
+                        "es-CO",
+                      )}
+                    </td>
+                    <td className={styles.numeroAlineado}>
+                      $
+                      {Number(item.valor_ventas_ayer || 0).toLocaleString(
+                        "es-CO",
+                        {
+                          minimumFractionDigits: 2,
+                        },
+                      )}
+                    </td>
+                    <td className={styles.numeroAlineado}>
+                      {Number(item.cantidad_vendida || 0).toLocaleString(
+                        "es-CO",
+                      )}
+                    </td>
+                    <td className={styles.numeroAlineado}>
+                      $
+                      {Number(item.valor_ventas || 0).toLocaleString("es-CO", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </td>
+                    <td className={styles.numeroAlineado}>
+                      {Number(
+                        item.cantidad_vendida_mes_anterior || 0,
+                      ).toLocaleString("es-CO")}
+                    </td>
+                    <td className={styles.numeroAlineado}>
+                      $
+                      {Number(
+                        item.valor_ventas_mes_anterior || 0,
+                      ).toLocaleString("es-CO", { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className={styles.numeroAlineado}>
+                      {Number(item.cantidad_promedio_4m || 0).toLocaleString(
+                        "es-CO",
+                        {
+                          maximumFractionDigits: 2,
+                        },
+                      )}
+                    </td>
+                    <td className={styles.numeroAlineado}>
+                      $
+                      {Number(item.valor_promedio_4m || 0).toLocaleString(
+                        "es-CO",
+                        {
+                          minimumFractionDigits: 2,
+                        },
+                      )}
+                    </td>
+                    <td className={styles.numeroAlineado}>
+                      {Number(item.consumo_promedio || 0).toLocaleString(
+                        "es-CO",
+                        {
+                          maximumFractionDigits: 2,
+                        },
+                      )}
+                    </td>
+                    <td
+                      className={styles.numeroAlineado}
+                      style={{ fontWeight: "600" }}
+                    >
+                      {Math.round(Number(item.dias_promedio || 0))} d
+                    </td>
+                    <td
+                      className={styles.numeroAlineado}
+                      style={{
+                        color:
+                          Number(item.valor_exceso || 0) > 0
+                            ? "#b91c1c"
+                            : "inherit",
+                      }}
+                    >
+                      $
+                      {Number(item.valor_exceso || 0).toLocaleString("es-CO", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                      <span className={getAbcBadge(item.clasificacion_abc)}>
+                        {item.clasificacion_abc}
+                      </span>
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {/* --- PANEL DE CONTROL DE PAGINACION --- */}
+      {/* Control de Paginacion */}
       <div className={styles.paginacionContainer}>
         <div className={styles.paginacionMeta}>
           Mostrando <strong>{inicioRegistro}</strong> al{" "}

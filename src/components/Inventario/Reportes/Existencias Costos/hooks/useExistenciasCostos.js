@@ -5,20 +5,23 @@ import { exportarExistenciasCostosExcel } from "../utils/excelExport";
 
 export const useExistenciasCostos = (addNotification) => {
   const [activeTab, setActiveTab] = useState(TABS_EXISTENCIAS.ANALITICA);
-  const [subTabParam, setSubTabParam] = useState("LINEAS"); // Control interno: LINEAS o LOCALES
+  const [subTabParam, setSubTabParam] = useState("LINEAS");
   const [loading, setLoading] = useState(false);
   const [reporteData, setReporteData] = useState([]);
   const [lineasConfig, setLineasConfig] = useState([]);
-  const [localesConfig, setLocalesConfig] = useState([]); // Coleccion dinamica de bodegas
+  const [localesConfig, setLocalesConfig] = useState([]);
   const [localSeleccionado, setLocalSeleccionado] = useState([]);
   const [siesaLineasResult, setSiesaLineasResult] = useState([]);
   const [siesaBodegasResult, setSiesaBodegasResult] = useState([]);
   const [loadingBusqueda, setLoadingBusqueda] = useState(false);
 
+  // Estados para modalidad de consulta multi-lapso
+  const [esMultiLapso, setEsMultiLapso] = useState(false);
   const f = new Date();
   const [lapsoCalendario, setLapsoCalendario] = useState(
     `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, "0")}`,
   );
+  const [lapsosSeleccionados, setLapsosSeleccionados] = useState([]);
 
   // Formularios desacoplados por entidad
   const [formLinea, setFormLinea] = useState({
@@ -42,12 +45,11 @@ export const useExistenciasCostos = (addNotification) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(50);
 
-  // --- TRAZABILIDAD DE BODEGAS / LOCALES ---
   const cargarLocalesConfig = useCallback(async () => {
     try {
       const res = await apiService.listarLocalesConfig();
       if (res?.success) setLocalesConfig(res.data || []);
-    } catch (e) {
+    } catch (err) {
       addNotification({
         type: "error",
         message:
@@ -56,7 +58,6 @@ export const useExistenciasCostos = (addNotification) => {
     }
   }, [addNotification]);
 
-  // Carga inicial preventiva de las bodegas para alimentar selectores de filtros de inmediato
   useEffect(() => {
     cargarLocalesConfig();
   }, [cargarLocalesConfig]);
@@ -67,10 +68,25 @@ export const useExistenciasCostos = (addNotification) => {
       setLoading(true);
       setCurrentPage(1);
       try {
-        const res = await apiService.obtenerReporteExistenciasCostos(
-          lapsoCalendario.replace("-", ""),
-          localSeleccionado,
-        );
+        let res;
+        if (esMultiLapso) {
+          if (lapsosSeleccionados.length === 0) {
+            throw new Error("Debe seleccionar al menos un periodo.");
+          }
+          const lapsosFormat = lapsosSeleccionados.map((l) =>
+            l.replace("-", ""),
+          );
+          res = await apiService.obtenerReporteExistenciasCostosMultiLapso(
+            lapsosFormat,
+            localSeleccionado,
+          );
+        } else {
+          res = await apiService.obtenerReporteExistenciasCostos(
+            lapsoCalendario.replace("-", ""),
+            localSeleccionado,
+          );
+        }
+
         const data = res?.resultado ? res.resultado : res;
         if (data?.success || Array.isArray(data)) {
           const registros = Array.isArray(data) ? data : data.data || [];
@@ -87,10 +103,15 @@ export const useExistenciasCostos = (addNotification) => {
         setLoading(false);
       }
     },
-    [lapsoCalendario, localSeleccionado, addNotification],
+    [
+      esMultiLapso,
+      lapsosSeleccionados,
+      lapsoCalendario,
+      localSeleccionado,
+      addNotification,
+    ],
   );
 
-  // Pipeline de procesamiento en cliente (Filtros + Ordenamiento)
   const dataProcesada = useMemo(() => {
     let dataset = [...reporteData];
     if (searchTerm.trim() !== "") {
@@ -143,7 +164,14 @@ export const useExistenciasCostos = (addNotification) => {
   const ejecutarExportacion = useCallback(async () => {
     setLoading(true);
     try {
-      await exportarExistenciasCostosExcel(reporteData, lapsoCalendario);
+      const etiquetaPeriodo = esMultiLapso
+        ? lapsosSeleccionados.join("_") || "multi_periodo"
+        : lapsoCalendario;
+      await exportarExistenciasCostosExcel(
+        reporteData,
+        etiquetaPeriodo,
+        esMultiLapso,
+      );
     } catch (err) {
       addNotification({
         type: "error",
@@ -152,15 +180,20 @@ export const useExistenciasCostos = (addNotification) => {
     } finally {
       setLoading(false);
     }
-  }, [reporteData, lapsoCalendario, addNotification]);
+  }, [
+    reporteData,
+    lapsoCalendario,
+    esMultiLapso,
+    lapsosSeleccionados,
+    addNotification,
+  ]);
 
-  // --- TRAZABILIDAD DE LINEAS / COBERTURAS ---
   const cargarLineasConfig = useCallback(async () => {
     setLoading(true);
     try {
       const res = await apiService.listarLineasConfig();
       if (res?.success) setLineasConfig(res.data || []);
-    } catch (e) {
+    } catch (err) {
       addNotification({
         type: "error",
         message: err.message || "Error cargando maestros de lineas.",
@@ -222,7 +255,7 @@ export const useExistenciasCostos = (addNotification) => {
           addNotification({ type: "success", message: "Regla removida." });
           cargarLineasConfig();
         }
-      } catch (e) {
+      } catch (err) {
         addNotification({
           type: "error",
           message: err.message || "No se pudo eliminar.",
@@ -234,7 +267,6 @@ export const useExistenciasCostos = (addNotification) => {
     [cargarLineasConfig, addNotification],
   );
 
-  // --- OPERACIONES CRUD DE BODEGAS / LOCALES ---
   const guardarLocalConfiguracion = useCallback(
     async (e) => {
       if (e) e.preventDefault();
@@ -284,7 +316,7 @@ export const useExistenciasCostos = (addNotification) => {
           });
           cargarLocalesConfig();
         }
-      } catch (e) {
+      } catch (err) {
         addNotification({
           type: "error",
           message: err.message || "No se logro remover el local.",
@@ -304,8 +336,6 @@ export const useExistenciasCostos = (addNotification) => {
     setLoadingBusqueda(true);
     try {
       const res = await apiService.buscarLineasSiesa(termino);
-
-      // EXTRACCIÓN ULTRA-DEFENSIVA: Cubre todas las formas de empaquetado del cliente HTTP
       let datos = [];
       if (res?.resultado?.data && Array.isArray(res.resultado.data)) {
         datos = res.resultado.data;
@@ -316,7 +346,6 @@ export const useExistenciasCostos = (addNotification) => {
       } else if (Array.isArray(res)) {
         datos = res;
       }
-
       setSiesaLineasResult(datos);
     } catch (e) {
       setSiesaLineasResult([]);
@@ -333,8 +362,6 @@ export const useExistenciasCostos = (addNotification) => {
     setLoadingBusqueda(true);
     try {
       const res = await apiService.buscarBodegasSiesa(termino);
-
-      // EXTRACCIÓN ULTRA-DEFENSIVA: Cubre todas las formas de empaquetado del cliente HTTP
       let datos = [];
       if (res?.resultado?.data && Array.isArray(res.resultado.data)) {
         datos = res.resultado.data;
@@ -345,7 +372,6 @@ export const useExistenciasCostos = (addNotification) => {
       } else if (Array.isArray(res)) {
         datos = res;
       }
-
       setSiesaBodegasResult(datos);
     } catch (e) {
       setSiesaBodegasResult([]);
@@ -361,8 +387,12 @@ export const useExistenciasCostos = (addNotification) => {
     setSubTabParam,
     loading,
     reporteData,
+    esMultiLapso,
+    setEsMultiLapso,
     lapsoCalendario,
     setLapsoCalendario,
+    lapsosSeleccionados,
+    setLapsosSeleccionados,
     localSeleccionado,
     setLocalSeleccionado,
     consultarReporte,

@@ -1548,6 +1548,18 @@ export const apiService = {
     );
   },
 
+  async obtenerReporteExistenciasCostosMultiLapso(lapsos = [], local = "") {
+    return request(
+      "/inventario/reportes/existencias_costos/endpoint.php?action=obtener_reporte_existencias_multilapso",
+      {
+        method: "POST",
+        body: { lapsos, local },
+        errorMessage:
+          "Fallo al consolidar reporte multi-periodo de existencias y costos.",
+      },
+    );
+  },
+
   async listarLineasConfig() {
     return request(
       "/inventario/reportes/existencias_costos/endpoint.php?action=listar_lineas_config",
